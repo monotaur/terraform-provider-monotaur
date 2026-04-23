@@ -3,6 +3,19 @@
 This repository contains the Terraform provider for [Monotaur](https://monotaur.io),
 built with the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework).
 
+## Usage
+
+```hcl
+terraform {
+  required_providers {
+    monotaur = {
+      source  = "monotaur/monotaur"
+      version = "~> 0.1"
+    }
+  }
+}
+```
+
 ## Requirements
 
 - [Go](https://golang.org/doc/install) 1.21+
