@@ -1,0 +1,28 @@
+name: Acceptance Tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 3am UTC
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    name: Acceptance Tests
+    runs-on: ubuntu-latest
+    # Only run if secrets are configured
+    if: ${{ secrets.MONOTAUR_API_KEY != '' && secrets.MONOTAUR_ENDPOINT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Run acceptance tests
+        env:
+          TF_ACC: "1"
+          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_API_KEY }}
+          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_ENDPOINT }}
+        run: make testacc
+        timeout-minutes: 60

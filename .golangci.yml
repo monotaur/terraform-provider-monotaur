@@ -1,0 +1,24 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - godot
+    - misspell
+    - unconvert
+    - unparam
+    - gofmt
+    - goimports
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/monotaur/terraform-provider-monotaur
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
