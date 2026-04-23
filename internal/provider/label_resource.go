@@ -3,10 +3,13 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -79,11 +82,17 @@ func (r *labelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				MarkdownDescription: "Optional hex colour code for the label (e.g. `#FF5733`).",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"icon": schema.StringAttribute{
 				MarkdownDescription: "Optional icon identifier for the label.",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The computed machine-readable name of the label (assigned by the API).",
@@ -109,18 +118,27 @@ func (r *labelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"component_ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of components associated with this label.",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"monitor_ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of monitors associated with this label.",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -264,6 +282,11 @@ func (r *labelResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	textVal := plan.Text.ValueString()
 	attrs.Text = &textVal
 
+	// Known v0.1 limitation: when `color` or `icon` are removed from the
+	// Terraform configuration (set to null), the PATCH body omits them entirely.
+	// JSON:API treats an absent field as "no change", so the API will not clear
+	// the value. To explicitly clear these attributes you must set them to an
+	// empty string in the config. This will be addressed in a future release.
 	if !plan.Color.IsNull() && !plan.Color.IsUnknown() {
 		v := plan.Color.ValueString()
 		attrs.Color = &v
@@ -344,36 +367,10 @@ func (r *labelResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 // ImportState supports `terraform import monotaur_label.example <id>`.
+// ImportStatePassthroughID sets the "id" attribute from the import ID and then
+// the framework automatically invokes Read to populate the rest of the state.
 func (r *labelResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	id := req.ID
-
-	tflog.Debug(ctx, "monotaur_label: importing label", map[string]any{"id": id})
-
-	apiResp, err := r.client.Inner().GetLabel(ctx, id, &api.GetLabelParams{})
-	if err != nil {
-		resp.Diagnostics.AddError("Error Importing Label", "Could not read label "+id+": "+err.Error())
-		return
-	}
-	defer apiResp.Body.Close()
-
-	if err := client.CheckResponse(apiResp); err != nil {
-		resp.Diagnostics.AddError("Error Importing Label", "API returned an error: "+err.Error())
-		return
-	}
-
-	data, err := client.UnmarshalDocument[api.DataInLabelResponse](apiResp.Body)
-	if err != nil {
-		resp.Diagnostics.AddError("Error Reading Label Response", err.Error())
-		return
-	}
-
-	var state labelResourceModel
-	resp.Diagnostics.Append(flattenLabel(ctx, data, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -507,12 +504,12 @@ func flattenLabel(ctx context.Context, data api.DataInLabelResponse, model *labe
 			model.Value = types.StringNull()
 		}
 		if attrs.CreateDateTime != nil {
-			model.CreateDateTime = types.StringValue(attrs.CreateDateTime.String())
+			model.CreateDateTime = types.StringValue(attrs.CreateDateTime.Format(time.RFC3339))
 		} else {
 			model.CreateDateTime = types.StringNull()
 		}
 		if attrs.UpdateDateTime != nil {
-			model.UpdateDateTime = types.StringValue(attrs.UpdateDateTime.String())
+			model.UpdateDateTime = types.StringValue(attrs.UpdateDateTime.Format(time.RFC3339))
 		} else {
 			model.UpdateDateTime = types.StringNull()
 		}
@@ -595,4 +592,14 @@ type LabelResourceModelForTest = labelResourceModel
 // FlattenLabelForTest exposes flattenLabel for use in unit tests.
 func FlattenLabelForTest(ctx context.Context, data api.DataInLabelResponse, model *labelResourceModel) diag.Diagnostics {
 	return flattenLabel(ctx, data, model)
+}
+
+// BuildCreateLabelRelationshipsForTest exposes buildCreateLabelRelationships for use in unit tests.
+func BuildCreateLabelRelationshipsForTest(ctx context.Context, plan labelResourceModel) (*api.RelationshipsInCreateLabelRequest, diag.Diagnostics) {
+	return buildCreateLabelRelationships(ctx, plan)
+}
+
+// BuildUpdateLabelRelationshipsForTest exposes buildUpdateLabelRelationships for use in unit tests.
+func BuildUpdateLabelRelationshipsForTest(ctx context.Context, plan labelResourceModel) (*api.RelationshipsInUpdateLabelRequest, diag.Diagnostics) {
+	return buildUpdateLabelRelationships(ctx, plan)
 }

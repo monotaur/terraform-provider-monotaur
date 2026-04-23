@@ -57,6 +57,32 @@ Create `internal/provider/<name>_resource.go`. Use these mapping rules:
 | To-many relationship | `schema.ListAttribute{ElementType: types.StringType, Optional: true, Computed: true}`, attribute name `<relation>_ids` |
 | To-one relationship | `schema.StringAttribute{Optional: true}`, attribute name `<relation>_id` |
 
+**`UseStateForUnknown` for Optional+Computed attributes**
+
+Every attribute that is both `Optional: true` and `Computed: true` must include
+`stringplanmodifier.UseStateForUnknown()` (or the appropriate type-specific
+plan modifier, e.g. `listplanmodifier.UseStateForUnknown()`). Without it,
+Terraform will produce a spurious plan diff on every refresh because the
+computed value is treated as unknown.
+
+```go
+"color": schema.StringAttribute{
+    Optional: true,
+    Computed: true,
+    PlanModifiers: []planmodifier.String{
+        stringplanmodifier.UseStateForUnknown(),
+    },
+},
+"component_ids": schema.ListAttribute{
+    Optional:    true,
+    Computed:    true,
+    ElementType: types.StringType,
+    PlanModifiers: []planmodifier.List{
+        listplanmodifier.UseStateForUnknown(),
+    },
+},
+```
+
 `openapi:discriminator` fields on API structs are internal to JSON:API and must
 NOT be surfaced in the Terraform schema.
 
@@ -97,8 +123,23 @@ func (r *widgetResource) Create(ctx context.Context, ...) {
 // Read — GET /widgets/{id}
 // Update — PATCH /widgets/{id}
 // Delete — DELETE /widgets/{id}
-// ImportState — GET /widgets/{id}, set full state
+// ImportState — sets "id" from the import argument; Read is invoked automatically
 ```
+
+**ImportState pattern**
+
+Always use `resource.ImportStatePassthroughID` rather than a manual
+implementation. The helper writes the import argument into the `id` attribute
+and the framework then invokes `Read` automatically to populate the rest of
+state:
+
+```go
+func (r *widgetResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+    resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+```
+
+Import the `"github.com/hashicorp/terraform-plugin-framework/path"` package.
 
 ### 5. Implement the flatten helper
 
@@ -125,6 +166,22 @@ func flattenWidget(ctx context.Context, data api.DataInWidgetResponse, model *wi
 Use `types.StringNull()` for absent optional strings and
 `types.ListValueMust(types.StringType, nil)` for absent relationship lists so
 that the Terraform state is always populated (not unknown).
+
+**Timestamp formatting**
+
+Always format `time.Time` values using `time.RFC3339` — never use
+`time.Time.String()` which produces Go's default layout and is not a valid
+RFC 3339 timestamp:
+
+```go
+// correct
+model.CreateDateTime = types.StringValue(attrs.CreateDateTime.Format(time.RFC3339))
+
+// wrong — .String() returns a Go-specific layout, not RFC 3339
+model.CreateDateTime = types.StringValue(attrs.CreateDateTime.String())
+```
+
+Schema docstrings for timestamp attributes should read: "RFC 3339 timestamp".
 
 ### 6. Implement the data source
 
@@ -179,8 +236,12 @@ Create `internal/provider/<name>_resource_test.go`. At minimum:
 
 **Acceptance tests** (require `TF_ACC=1` and a live endpoint):
 
-- Guard with `if !acctest.IsAccTest() { t.Skip(...) }` (or a manual
-  `os.Getenv("TF_ACC") == ""` check until the testing dependency is added).
+- Guard with:
+  ```go
+  if os.Getenv("TF_ACC") == "" {
+      t.Skip("Set TF_ACC=1 to run acceptance tests")
+  }
+  ```
 - Follow the sequence: create → plan (expect no changes) → update → import →
   destroy.
 

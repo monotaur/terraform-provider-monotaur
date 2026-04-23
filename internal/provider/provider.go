@@ -113,10 +113,6 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 		"api_key_set": true,
 	})
 
-	// Register the api_key value as a masked field so tflog strips it from any
-	// log messages that inadvertently contain the raw key.
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "api_key")
-
 	c, err := client.New(client.Config{
 		BaseURL: endpoint,
 		APIKey:  apiKey,

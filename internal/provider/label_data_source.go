@@ -28,21 +28,10 @@ type labelDataSource struct {
 	client *client.Client
 }
 
-// labelDataSourceModel is the Terraform state model for the label data source.
-// It is identical to labelResourceModel but sourced from a data block.
-type labelDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Text             types.String `tfsdk:"text"`
-	Color            types.String `tfsdk:"color"`
-	Icon             types.String `tfsdk:"icon"`
-	Name             types.String `tfsdk:"name"`
-	Value            types.String `tfsdk:"value"`
-	CreateDateTime   types.String `tfsdk:"create_date_time"`
-	UpdateDateTime   types.String `tfsdk:"update_date_time"`
-	CalendarEventIDs types.List   `tfsdk:"calendar_event_ids"`
-	ComponentIDs     types.List   `tfsdk:"component_ids"`
-	MonitorIDs       types.List   `tfsdk:"monitor_ids"`
-}
+// labelDataSourceModel is an alias for labelResourceModel. Both structs share
+// the same schema shape, so a type alias removes duplication without any
+// runtime cost.
+type labelDataSourceModel = labelResourceModel
 
 // Metadata sets the data source type name.
 func (d *labelDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -152,27 +141,13 @@ func (d *labelDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	// Re-use the flatten helper via a temporary labelResourceModel.
-	var state labelResourceModel
+	// Re-use the flatten helper. labelDataSourceModel is an alias of
+	// labelResourceModel so they are interchangeable here.
+	var state labelDataSourceModel
 	resp.Diagnostics.Append(flattenLabel(ctx, data, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Map from resource model to data source model.
-	result := labelDataSourceModel{
-		ID:               state.ID,
-		Text:             state.Text,
-		Color:            state.Color,
-		Icon:             state.Icon,
-		Name:             state.Name,
-		Value:            state.Value,
-		CreateDateTime:   state.CreateDateTime,
-		UpdateDateTime:   state.UpdateDateTime,
-		CalendarEventIDs: state.CalendarEventIDs,
-		ComponentIDs:     state.ComponentIDs,
-		MonitorIDs:       state.MonitorIDs,
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &result)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -293,9 +294,174 @@ func TestLabelDataSource_typeNameIsMonotaurLabel(t *testing.T) {
 // dependency is added.
 
 func TestAccLabelResource_basic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping acceptance test in short mode")
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
-	// Acceptance tests require TF_ACC=1 — skip when not set.
-	t.Skip("acceptance tests require TF_ACC=1 and a live Monotaur endpoint; set TF_ACC=1 to run")
+	// TODO: implement full acceptance test (create → plan → update → import → destroy).
+}
+
+// ---------------------------------------------------------------------------
+// Relationship builder unit tests
+// ---------------------------------------------------------------------------
+
+// buildPlanWithIDs constructs a minimal labelResourceModel with the provided
+// relationship ID lists set. Pass nil to leave a list as null.
+func buildPlanWithIDs(ctx context.Context, t *testing.T, calendarIDs, componentIDs, monitorIDs []string) provider.LabelResourceModelForTest {
+	t.Helper()
+
+	toList := func(ids []string) types.List {
+		if ids == nil {
+			return types.ListNull(types.StringType)
+		}
+		list, diags := types.ListValueFrom(ctx, types.StringType, ids)
+		if diags.HasError() {
+			t.Fatalf("types.ListValueFrom error: %v", diags)
+		}
+		return list
+	}
+
+	return provider.LabelResourceModelForTest{
+		Text:             types.StringValue("test"),
+		CalendarEventIDs: toList(calendarIDs),
+		ComponentIDs:     toList(componentIDs),
+		MonitorIDs:       toList(monitorIDs),
+	}
+}
+
+func TestBuildCreateLabelRelationships_oneRelationship(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, nil, []string{"c1", "c2"}, nil)
+
+	rels, diags := provider.BuildCreateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents != nil {
+		t.Error("CalendarEvents: expected nil, got non-nil")
+	}
+	if rels.Monitors != nil {
+		t.Error("Monitors: expected nil, got non-nil")
+	}
+	if rels.Components == nil {
+		t.Fatal("Components: expected non-nil, got nil")
+	}
+	if got := len(rels.Components.Data); got != 2 {
+		t.Errorf("Components.Data: want 2, got %d", got)
+	}
+	if got := rels.Components.Data[0].Id; got != "c1" {
+		t.Errorf("Components.Data[0].Id: want %q, got %q", "c1", got)
+	}
+}
+
+func TestBuildCreateLabelRelationships_allThreePopulated(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, []string{"ce1"}, []string{"c1"}, []string{"m1"})
+
+	rels, diags := provider.BuildCreateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents == nil || len(rels.CalendarEvents.Data) != 1 {
+		t.Errorf("CalendarEvents: want 1 item, got %v", rels.CalendarEvents)
+	}
+	if rels.Components == nil || len(rels.Components.Data) != 1 {
+		t.Errorf("Components: want 1 item, got %v", rels.Components)
+	}
+	if rels.Monitors == nil || len(rels.Monitors.Data) != 1 {
+		t.Errorf("Monitors: want 1 item, got %v", rels.Monitors)
+	}
+}
+
+func TestBuildCreateLabelRelationships_emptyLists(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, []string{}, []string{}, []string{})
+
+	rels, diags := provider.BuildCreateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents == nil {
+		t.Error("CalendarEvents: expected non-nil (empty list), got nil")
+	} else if got := len(rels.CalendarEvents.Data); got != 0 {
+		t.Errorf("CalendarEvents.Data: want 0 items, got %d", got)
+	}
+	if rels.Components == nil {
+		t.Error("Components: expected non-nil (empty list), got nil")
+	} else if got := len(rels.Components.Data); got != 0 {
+		t.Errorf("Components.Data: want 0 items, got %d", got)
+	}
+	if rels.Monitors == nil {
+		t.Error("Monitors: expected non-nil (empty list), got nil")
+	} else if got := len(rels.Monitors.Data); got != 0 {
+		t.Errorf("Monitors.Data: want 0 items, got %d", got)
+	}
+}
+
+func TestBuildUpdateLabelRelationships_oneRelationship(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, nil, nil, []string{"m1", "m2"})
+
+	rels, diags := provider.BuildUpdateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents != nil {
+		t.Error("CalendarEvents: expected nil, got non-nil")
+	}
+	if rels.Components != nil {
+		t.Error("Components: expected nil, got non-nil")
+	}
+	if rels.Monitors == nil {
+		t.Fatal("Monitors: expected non-nil, got nil")
+	}
+	if got := len(rels.Monitors.Data); got != 2 {
+		t.Errorf("Monitors.Data: want 2, got %d", got)
+	}
+	if got := rels.Monitors.Data[0].Id; got != "m1" {
+		t.Errorf("Monitors.Data[0].Id: want %q, got %q", "m1", got)
+	}
+}
+
+func TestBuildUpdateLabelRelationships_allThreePopulated(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, []string{"ce1"}, []string{"c1"}, []string{"m1"})
+
+	rels, diags := provider.BuildUpdateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents == nil || len(rels.CalendarEvents.Data) != 1 {
+		t.Errorf("CalendarEvents: want 1 item, got %v", rels.CalendarEvents)
+	}
+	if rels.Components == nil || len(rels.Components.Data) != 1 {
+		t.Errorf("Components: want 1 item, got %v", rels.Components)
+	}
+	if rels.Monitors == nil || len(rels.Monitors.Data) != 1 {
+		t.Errorf("Monitors: want 1 item, got %v", rels.Monitors)
+	}
+}
+
+func TestBuildUpdateLabelRelationships_emptyLists(t *testing.T) {
+	ctx := context.Background()
+	plan := buildPlanWithIDs(ctx, t, []string{}, []string{}, []string{})
+
+	rels, diags := provider.BuildUpdateLabelRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if rels.CalendarEvents == nil {
+		t.Error("CalendarEvents: expected non-nil (empty list), got nil")
+	} else if got := len(rels.CalendarEvents.Data); got != 0 {
+		t.Errorf("CalendarEvents.Data: want 0 items, got %d", got)
+	}
+	if rels.Components == nil {
+		t.Error("Components: expected non-nil (empty list), got nil")
+	} else if got := len(rels.Components.Data); got != 0 {
+		t.Errorf("Components.Data: want 0 items, got %d", got)
+	}
+	if rels.Monitors == nil {
+		t.Error("Monitors: expected non-nil (empty list), got nil")
+	} else if got := len(rels.Monitors.Data); got != 0 {
+		t.Errorf("Monitors.Data: want 0 items, got %d", got)
+	}
 }
