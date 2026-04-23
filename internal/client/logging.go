@@ -34,15 +34,17 @@ func NewLoggingTransport(inner http.RoundTripper) http.RoundTripper {
 // It never modifies the request.
 func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Derive a context from the request so tflog can attach provider metadata.
-	// http.Request.Context() is always non-nil for requests created with
-	// http.NewRequest or http.NewRequestWithContext.
+	// Note: req.Context() may return context.Background() when the caller used
+	// http.NewRequest rather than http.NewRequestWithContext, in which case tflog
+	// entries emitted here will not be correlated with the provider-level masked
+	// context (and the api_key mask will not apply). This is acceptable for v0.1;
+	// a future improvement would thread the provider context through to the client.
 	ctx := req.Context()
 
 	method := req.Method
+	// Log only the URL path, never the raw query string. Query parameters may
+	// contain tokens, session IDs, or other PII that must not appear in logs.
 	path := req.URL.Path
-	if req.URL.RawQuery != "" {
-		path = path + "?" + req.URL.RawQuery
-	}
 
 	tflog.Debug(ctx, "monotaur: sending request", map[string]any{
 		"http.method": method,

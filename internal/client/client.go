@@ -108,7 +108,9 @@ func New(cfg Config) (*Client, error) {
 
 	httpClient := &http.Client{Transport: loggingRT}
 	if cfg.HTTPClient != nil {
-		// Copy timeouts / jar from the caller-supplied client but replace the transport.
+		// Wrapping the caller-supplied Transport (rather than replacing the whole
+		// client) is intentional: it preserves any retry/backoff middleware the
+		// caller has already configured while inserting the logging layer on top.
 		httpClient.Timeout = cfg.HTTPClient.Timeout
 		httpClient.Jar = cfg.HTTPClient.Jar
 		httpClient.CheckRedirect = cfg.HTTPClient.CheckRedirect
@@ -127,20 +129,23 @@ func New(cfg Config) (*Client, error) {
 }
 
 // headerInjector returns a RequestEditorFn that sets the Content-Type, Accept,
-// and (when non-empty) Authorization headers required by the Monotaur API.
+// and Authorization headers required by the Monotaur API.
+// apiKey is guaranteed non-empty by the validation in New.
 func headerInjector(apiKey string) api.RequestEditorFn {
 	return func(_ context.Context, req *http.Request) error {
 		req.Header.Set("Content-Type", ContentType)
 		req.Header.Set("Accept", ContentType)
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 		return nil
 	}
 }
 
 // Inner returns the underlying generated api.ClientInterface. This gives
 // callers direct access to every generated operation.
+//
+// TODO: Inner() leaks the full generated surface area and makes it harder to
+// evolve the client contract independently of the generated code. Replace it
+// with typed wrapper methods as resources are added, then unexport Inner.
 func (c *Client) Inner() api.ClientInterface {
 	return c.inner
 }
@@ -218,9 +223,12 @@ func DecodeError(resp *http.Response) error {
 	var doc api.ErrorResponseDocument
 	if jsonErr := json.Unmarshal(body, &doc); jsonErr != nil {
 		// Body is not valid JSON:API — surface raw body as context.
-		preview := string(body)
-		if len(preview) > 256 {
-			preview = preview[:256] + "…"
+		// Truncate by runes, not bytes, to avoid splitting a multi-byte UTF-8
+		// codepoint at the 256-character boundary.
+		runes := []rune(string(body))
+		preview := string(runes)
+		if len(runes) > 256 {
+			preview = string(runes[:256]) + "…"
 		}
 		return fmt.Errorf("monotaur: HTTP %d: %s", resp.StatusCode, preview)
 	}
@@ -269,6 +277,9 @@ func ETagFromResponse(resp *http.Response) string {
 // *Params structs:
 //
 //	params.IfNoneMatch = client.StringPtr(etag)
+//
+// TODO: Move StringPtr (and future BoolPtr, Int64Ptr, etc.) to an
+// internal/ptr package once more pointer helpers are needed across the codebase.
 func StringPtr(s string) *string {
 	return &s
 }

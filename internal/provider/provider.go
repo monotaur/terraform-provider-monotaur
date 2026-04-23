@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -82,6 +83,33 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 		return
 	}
 
+	// Unknown values occur when an attribute is derived from another resource
+	// that has not yet been applied. Configuring the provider at plan time with
+	// unknown inputs is not supported — emit a framework-standard diagnostic so
+	// Terraform can surface a clear error rather than silently falling back to
+	// environment variables.
+	if config.Endpoint.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("endpoint"),
+			"Unknown Endpoint",
+			"The Monotaur provider cannot be configured with an unknown endpoint value. "+
+				"Resolve the upstream resource before referencing its output here, or set "+
+				"the endpoint explicitly in the provider block.",
+		)
+	}
+	if config.APIKey.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("api_key"),
+			"Unknown API Key",
+			"The Monotaur provider cannot be configured with an unknown api_key value. "+
+				"Resolve the upstream resource before referencing its output here, or set "+
+				"the api_key explicitly in the provider block.",
+		)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	// Resolve endpoint: explicit provider block value takes precedence, then env var.
 	endpoint := os.Getenv("MONOTAUR_ENDPOINT")
 	if !config.Endpoint.IsNull() && !config.Endpoint.IsUnknown() {
@@ -89,6 +117,9 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 	}
 	if endpoint == "" {
 		endpoint = "https://api.monotaur.io"
+		tflog.Info(ctx, "monotaur: endpoint not set, defaulting to Monotaur cloud API", map[string]any{
+			"endpoint": endpoint,
+		})
 	}
 
 	// Resolve api_key: explicit provider block value takes precedence, then env var.
@@ -107,15 +138,21 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 		return
 	}
 
-	// Log the resolved configuration, redacting the api_key value.
+	// Register the raw api_key string as a masked value so tflog scrubs it from
+	// ALL subsequent log output — including free-form message strings and field
+	// values. This must happen before any Debug/Info calls that could reference
+	// the resolved configuration, so the key is never written to the log in plain
+	// text. tflog.MaskLogStrings redacts the literal string wherever it appears,
+	// unlike MaskFieldValuesWithFieldKeys which only redacts entries whose field
+	// *key* is "api_key".
+	ctx = tflog.MaskLogStrings(ctx, apiKey)
+
+	// Log the resolved configuration. The api_key value is already masked in ctx
+	// so even if it were included here it would be scrubbed before emission.
 	tflog.Debug(ctx, "monotaur: provider configured", map[string]any{
 		"endpoint":    endpoint,
 		"api_key_set": true,
 	})
-
-	// Register the api_key value as a masked field so tflog strips it from any
-	// log messages that inadvertently contain the raw key.
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "api_key")
 
 	c, err := client.New(client.Config{
 		BaseURL: endpoint,

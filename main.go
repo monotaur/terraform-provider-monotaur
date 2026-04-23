@@ -9,7 +9,12 @@ import (
 	"github.com/monotaur/terraform-provider-monotaur/internal/provider"
 )
 
-// version is set by the build pipeline via -ldflags.
+// version must remain a package-level variable in package main so that the
+// build pipeline can inject the release tag at link time with:
+//
+//	-ldflags "-X main.version=v1.2.3"
+//
+// Moving it to any other package would break that injection.
 var version = "dev"
 
 func main() {

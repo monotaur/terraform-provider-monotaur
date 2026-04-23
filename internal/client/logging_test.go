@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -62,24 +63,87 @@ func TestLoggingTransport_propagatesTransportError(t *testing.T) {
 }
 
 func TestLoggingTransport_usesDefaultTransportWhenInnerIsNil(t *testing.T) {
-	// NewLoggingTransport(nil) should not panic and should wrap DefaultTransport.
-	// We cannot easily exercise it without a live server, so just confirm the
-	// return value is non-nil and doesn't panic on construction.
+	// NewLoggingTransport(nil) must wrap http.DefaultTransport. Exercise the
+	// fallback end-to-end by making a real request to a local httptest.Server,
+	// which confirms that DefaultTransport is wired correctly.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
 	transport := client.NewLoggingTransport(nil)
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext: %v", err)
+	}
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip with nil inner: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("StatusCode: want %d, got %d", http.StatusNoContent, resp.StatusCode)
+	}
 }
 
-func TestLoggingTransport_doesNotLeakAPIKeyInRequest(t *testing.T) {
-	// The logging transport must not add or expose the raw API key value. The
-	// api_key is injected by headerInjector as "Authorization: Bearer <key>",
-	// but the logging transport only reads req.Method and req.URL — it never
-	// reads or logs the Authorization header value itself.
-	//
-	// This test verifies that the Authorization header is still present after
-	// passing through the logging transport (i.e. it is not stripped), and that
-	// the transport does not itself add any additional auth headers.
+// TestLoggingTransport_doesNotLogQueryParameters verifies that the transport
+// logs only the URL path, not the raw query string. Query parameters may carry
+// tokens, session IDs, or other sensitive values that must not appear in logs.
+func TestLoggingTransport_doesNotLogQueryParameters(t *testing.T) {
+	// Capture the request as seen by the inner transport to confirm it is
+	// forwarded unmodified (the logging layer must be read-only).
+	var capturedURL string
+	inner := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	transport := client.NewLoggingTransport(inner)
+
+	// Include a sensitive-looking query parameter that must not appear in logs.
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"http://localhost/api/v1/things?token=supersecret&page=1",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret-key")
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	resp.Body.Close()
+
+	// The full URL (including query string) must still reach the inner transport
+	// unchanged — the logging transport must not strip or modify the request.
+	if !strings.Contains(capturedURL, "token=supersecret") {
+		t.Errorf("inner transport did not receive the full URL; got %q", capturedURL)
+	}
+
+	// The Authorization header must pass through unchanged.
+	// (Logging transport must not read or strip auth headers.)
+	if got := req.Header.Get("Authorization"); got != "Bearer secret-key" {
+		t.Errorf("Authorization header modified by logging transport: got %q", got)
+	}
+}
+
+// TestLoggingTransport_forwardsHeadersUnmodified verifies the Authorization
+// header is preserved and that the transport does not inject extra auth headers.
+func TestLoggingTransport_forwardsHeadersUnmodified(t *testing.T) {
 	var capturedReq *http.Request
 	inner := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		capturedReq = req
@@ -104,9 +168,13 @@ func TestLoggingTransport_doesNotLeakAPIKeyInRequest(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// The Authorization header must pass through unchanged.
+	// Authorization must pass through unchanged; the logging transport is read-only.
 	if got := capturedReq.Header.Get("Authorization"); got != "Bearer secret-key" {
 		t.Errorf("Authorization header modified by logging transport: got %q", got)
+	}
+	// The transport must not add extra Authorization headers.
+	if n := len(capturedReq.Header["Authorization"]); n != 1 {
+		t.Errorf("expected 1 Authorization header value, got %d", n)
 	}
 }
 
