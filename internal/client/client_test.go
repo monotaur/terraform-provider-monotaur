@@ -384,12 +384,22 @@ func TestStringPtr_usedAsIfNoneMatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNew_returnsErrorForEmptyBaseURL(t *testing.T) {
-	_, err := client.New(client.Config{})
+	_, err := client.New(client.Config{APIKey: "any-key"})
 	if err == nil {
 		t.Fatal("expected error for empty BaseURL")
 	}
 	if !strings.Contains(err.Error(), "BaseURL") {
 		t.Errorf("error should mention BaseURL, got: %v", err)
+	}
+}
+
+func TestNew_returnsErrorForEmptyAPIKey(t *testing.T) {
+	_, err := client.New(client.Config{BaseURL: "http://localhost"})
+	if err == nil {
+		t.Fatal("expected error for empty APIKey")
+	}
+	if !strings.Contains(err.Error(), "APIKey") {
+		t.Errorf("error should mention APIKey, got: %v", err)
 	}
 }
 
@@ -431,10 +441,8 @@ func TestNew_setsContentTypeHeaderOnRequests(t *testing.T) {
 	}
 }
 
-func TestNew_doesNotSetAuthorizationWhenAPIKeyEmpty(t *testing.T) {
-	var capturedHeader http.Header
+func TestNew_requiresAPIKey(t *testing.T) {
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		capturedHeader = req.Header.Clone()
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -442,22 +450,15 @@ func TestNew_doesNotSetAuthorizationWhenAPIKeyEmpty(t *testing.T) {
 		}, nil
 	})
 
-	c, err := client.New(client.Config{
+	_, err := client.New(client.Config{
 		BaseURL:    "http://localhost",
 		HTTPClient: &http.Client{Transport: transport},
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
+	if err == nil {
+		t.Fatal("expected error when APIKey is empty")
 	}
-
-	resp, err := c.Inner().GetAdminApiKeyCollection(context.Background(), &api.GetAdminApiKeyCollectionParams{})
-	if err != nil {
-		t.Fatalf("GetAdminApiKeyCollection: %v", err)
-	}
-	resp.Body.Close()
-
-	if got := capturedHeader.Get("Authorization"); got != "" {
-		t.Errorf("Authorization: want empty string, got %q", got)
+	if !strings.Contains(err.Error(), "APIKey") {
+		t.Errorf("error should mention APIKey, got: %v", err)
 	}
 }
 
