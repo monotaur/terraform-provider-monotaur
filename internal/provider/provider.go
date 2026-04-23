@@ -137,6 +137,7 @@ func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resour
 		NewComponentResource,
 		NewMonitorResource,
 		NewMonitorStatusRuleResource,
+		NewProbeResource,
 	}
 }
 
@@ -147,5 +148,6 @@ func (p *MonotaurProvider) DataSources(_ context.Context) []func() datasource.Da
 		NewComponentDataSource,
 		NewMonitorDataSource,
 		NewMonitorStatusRuleDataSource,
+		NewProbeDataSource,
 	}
 }
