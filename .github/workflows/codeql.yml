@@ -12,6 +12,7 @@ jobs:
   analyze:
     name: Analyze (Go)
     runs-on: ubuntu-latest
+    continue-on-error: true  # requires GitHub Code Security to be enabled; non-blocking until repository is configured
     permissions:
       actions: read
       contents: read
