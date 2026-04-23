@@ -253,6 +253,64 @@ go vet ./...            # must produce no output
 go test ./... -run TestFlatten -v
 ```
 
+## Running Acceptance Tests
+
+Acceptance tests exercise the provider against a real Monotaur API instance.
+They are env-gated via `TF_ACC` so that `go test ./...` (and CI unit-test jobs)
+never dial an external service.
+
+### Required environment variables
+
+| Variable | Description |
+|---|---|
+| `MONOTAUR_ENDPOINT` | Base URL of the Monotaur API, e.g. `https://api.example.monotaur.io` |
+| `MONOTAUR_API_KEY` | A valid API key with sufficient permissions to create/update/delete all resource types under test |
+
+### Running the full suite
+
+```bash
+export MONOTAUR_ENDPOINT=https://api.example.monotaur.io
+export MONOTAUR_API_KEY=mtat_...
+
+make testacc
+```
+
+`make testacc` expands to:
+
+```bash
+TF_ACC=1 go test ./... -v -timeout 120m
+```
+
+### Running a single acceptance test
+
+```bash
+TF_ACC=1 MONOTAUR_ENDPOINT=https://api.example.monotaur.io \
+         MONOTAUR_API_KEY=mtat_... \
+  go test ./internal/provider/ -run TestAccLabelResource_basic -v
+```
+
+### Pointing at a local or staging instance
+
+Set `MONOTAUR_ENDPOINT` to your local or staging base URL:
+
+```bash
+export MONOTAUR_ENDPOINT=http://localhost:3000
+export MONOTAUR_API_KEY=<key-from-local-seed>
+make testacc
+```
+
+### How acceptance tests are structured
+
+Each acceptance test:
+
+1. Guards execution with a check for `TF_ACC=1` (or calls `testAccPreCheck(t)`
+   which also verifies the required env vars are present).
+2. Uses `testAccProtoV6ProviderFactories` (defined in
+   `internal/provider/provider_test.go`) to wire the local provider binary
+   into the Terraform testing framework.
+3. Follows the sequence: create → plan (expect no changes) → update → import →
+   destroy — exercising all CRUD operations and import support.
+
 ## Relationship ID conventions
 
 | Cardinality | Terraform attribute name | API JSON:API type |

@@ -21,6 +21,10 @@ install: build ## Install the provider into the local Terraform plugin cache
 test: ## Run unit tests
 	go test ./...
 
+.PHONY: testacc
+testacc: ## Run acceptance tests against a live Monotaur API (requires TF_ACC=1, MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
+	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
+
 .PHONY: lint
 lint: ## Run golangci-lint
 	golangci-lint run ./...
