@@ -51,4 +51,4 @@ jobs:
 
       - uses: golangci/golangci-lint-action@2f856675483cb8b9378ee77ee0beb67955aca9d7  # v6.5.1
         with:
-          version: "v1.64.8"
+          version: "latest"
