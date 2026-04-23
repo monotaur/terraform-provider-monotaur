@@ -33,6 +33,10 @@ lint: ## Run golangci-lint
 generate: ## Re-generate any generated code
 	go generate ./...
 
+.PHONY: docs
+docs: ## Generate Registry-compatible Markdown docs via tfplugindocs
+	go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name monotaur
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -f $(BINARY_NAME)
