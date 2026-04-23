@@ -1,0 +1,37 @@
+name: Acceptance Tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 3am UTC
+  workflow_dispatch:
+
+# To enable acceptance tests, set the repository variable ACCEPTANCE_TESTS_ENABLED
+# to "true" in GitHub repo settings: Settings → Secrets and variables → Actions → Variables.
+# You must also configure the MONOTAUR_API_KEY and MONOTAUR_ENDPOINT repository secrets.
+# Secrets cannot be inspected in expression context, so a variable is used as the feature flag.
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance Tests
+    runs-on: ubuntu-latest
+    # Only run when the repository variable ACCEPTANCE_TESTS_ENABLED is set to "true".
+    # Set this in GitHub repo settings: Settings → Secrets and variables → Actions → Variables.
+    if: vars.ACCEPTANCE_TESTS_ENABLED == 'true'
+    timeout-minutes: 130  # Go test timeout is 120m; job timeout must exceed it for a clean error message
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5.5.0
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Run acceptance tests
+        env:
+          TF_ACC: "1"
+          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_API_KEY }}
+          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_ENDPOINT }}
+        run: make testacc

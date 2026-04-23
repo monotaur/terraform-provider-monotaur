@@ -259,6 +259,20 @@ Acceptance tests exercise the provider against a real Monotaur API instance.
 They are env-gated via `TF_ACC` so that `go test ./...` (and CI unit-test jobs)
 never dial an external service.
 
+### Enabling acceptance tests in CI
+
+The nightly acceptance workflow (`acceptance.yml`) is gated by a **repository
+variable** (not a secret) named `ACCEPTANCE_TESTS_ENABLED`. To enable it:
+
+1. Go to **Settings → Secrets and variables → Actions → Variables** in the
+   GitHub repository.
+2. Create a variable named `ACCEPTANCE_TESTS_ENABLED` with the value `true`.
+3. Configure the `MONOTAUR_API_KEY` and `MONOTAUR_ENDPOINT` repository secrets
+   in **Settings → Secrets and variables → Actions → Secrets**.
+
+GitHub Actions redacts secrets in expression context (they always evaluate to an
+empty string), so a plain repository variable is used as the on/off flag.
+
 ### Required environment variables
 
 | Variable | Description |
