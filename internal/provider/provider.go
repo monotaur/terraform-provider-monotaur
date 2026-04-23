@@ -173,10 +173,14 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 
 // Resources returns the list of resources implemented by this provider.
 func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{}
+	return []func() resource.Resource{
+		NewLabelResource,
+	}
 }
 
 // DataSources returns the list of data sources implemented by this provider.
 func (p *MonotaurProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewLabelDataSource,
+	}
 }
