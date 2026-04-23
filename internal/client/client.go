@@ -86,15 +86,32 @@ type Client struct {
 
 // New creates a new Client from the provided Config. It registers a request
 // editor that injects the required Content-Type and Authorization headers on
-// every outgoing request.
+// every outgoing request, and wraps the underlying HTTP transport with
+// structured tflog logging.
+//
+// BaseURL and APIKey are both required; an error is returned if either is empty.
 func New(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("monotaur client: BaseURL is required")
 	}
+	if cfg.APIKey == "" {
+		return nil, errors.New("monotaur client: APIKey is required")
+	}
 
-	httpClient := cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+	// Determine the base transport: honour an explicitly provided HTTPClient's
+	// Transport so tests can inject a stub, then wrap it with logging.
+	var baseTransport http.RoundTripper
+	if cfg.HTTPClient != nil {
+		baseTransport = cfg.HTTPClient.Transport // may be nil → DefaultTransport
+	}
+	loggingRT := NewLoggingTransport(baseTransport)
+
+	httpClient := &http.Client{Transport: loggingRT}
+	if cfg.HTTPClient != nil {
+		// Copy timeouts / jar from the caller-supplied client but replace the transport.
+		httpClient.Timeout = cfg.HTTPClient.Timeout
+		httpClient.Jar = cfg.HTTPClient.Jar
+		httpClient.CheckRedirect = cfg.HTTPClient.CheckRedirect
 	}
 
 	inner, err := api.NewClient(
