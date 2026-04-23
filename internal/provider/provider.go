@@ -175,6 +175,7 @@ func (p *MonotaurProvider) Configure(ctx context.Context, req provider.Configure
 func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewAlarmResource,
+		NewApiKeyResource,
 		NewLabelResource,
 		NewComponentResource,
 		NewMonitorResource,
@@ -192,6 +193,7 @@ func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resour
 func (p *MonotaurProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewAlarmDataSource,
+		NewApiKeyDataSource,
 		NewLabelDataSource,
 		NewComponentDataSource,
 		NewMonitorDataSource,
