@@ -135,6 +135,7 @@ func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resour
 	return []func() resource.Resource{
 		NewLabelResource,
 		NewComponentResource,
+		NewMonitorResource,
 	}
 }
 
@@ -143,5 +144,6 @@ func (p *MonotaurProvider) DataSources(_ context.Context) []func() datasource.Da
 	return []func() datasource.DataSource{
 		NewLabelDataSource,
 		NewComponentDataSource,
+		NewMonitorDataSource,
 	}
 }
