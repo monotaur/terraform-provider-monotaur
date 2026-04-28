@@ -1,0 +1,86 @@
+name: E2E Tests
+
+on:
+  schedule:
+    - cron: "0 2 * * *"  # 02:00 UTC nightly
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write  # needed to comment on PRs
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    # Only run when: scheduled, manual, or PR labeled 'run-e2e'
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'run-e2e')
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check secrets availability
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.MONOTAUR_E2E_API_KEY }}" ]; then
+            echo "MONOTAUR_E2E_API_KEY secret is not set — skipping E2E tests (fork or unconfigured repo)"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run E2E suite
+        if: steps.check-secrets.outputs.skip == 'false'
+        env:
+          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_E2E_ENDPOINT }}
+          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_E2E_API_KEY }}
+          TF_ACC: "1"
+        run: make e2e
+
+      - name: Sweep staging (cleanup)
+        if: always() && steps.check-secrets.outputs.skip == 'false'
+        env:
+          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_E2E_ENDPOINT }}
+          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_E2E_API_KEY }}
+          TF_ACC: "1"
+          SWEEP: "true"
+        run: make e2e-sweep
+
+      - name: Upload E2E results
+        if: always() && steps.check-secrets.outputs.skip == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e68b849e1b862ed2881e63a5980a  # v4.6.2
+        with:
+          name: e2e-results
+          path: |
+            e2e-results/junit.xml
+            e2e-results/summary.md
+            e2e-results/raw.jsonl
+            e2e-results/sweep.txt
+          if-no-files-found: ignore
+
+      - name: Comment on PR with results
+        if: failure() && github.event_name == 'pull_request' && steps.check-secrets.outputs.skip == 'false'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = 'E2E tests failed. No summary.md found.';
+            try {
+              summary = fs.readFileSync('e2e-results/summary.md', 'utf8');
+            } catch (e) {}
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## E2E Test Results\n\n${summary}`
+            });
