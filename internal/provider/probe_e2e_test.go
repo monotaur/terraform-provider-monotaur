@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -42,10 +43,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_basic(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "pb-basic")
 	componentName := acctest.Name("component", "pb-basic")
 	monitorName := acctest.Name("monitor", "pb-basic")
@@ -98,10 +95,6 @@ func TestAccMonotaurProbe_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_drift(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "pb-drift")
 	componentName := acctest.Name("component", "pb-drift")
 	monitorName := acctest.Name("monitor", "pb-drift")
@@ -178,10 +171,6 @@ func TestAccMonotaurProbe_drift(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_sensorIDs(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "pb-sid")
 	componentName := acctest.Name("component", "pb-sid")
 	monitorName := acctest.Name("monitor", "pb-sid")
@@ -208,8 +197,8 @@ func TestAccMonotaurProbe_sensorIDs(t *testing.T) {
 				Config: testAccProbeConfigWithSensors(labelName, componentName, monitorName, sensor1Name, sensor2Name, true, []string{"s1"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "1"),
-					resource.TestCheckResourceAttrPair(
-						"monotaur_probe.test", "sensor_ids.0",
+					resource.TestCheckTypeSetElemAttrPair(
+						"monotaur_probe.test", "sensor_ids.*",
 						"monotaur_sensor.s1", "id",
 					),
 				),
@@ -345,7 +334,8 @@ func probeOutOfBandPatch(id string, active bool) error {
 	req.Header.Set("Accept", ct)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("execute PATCH: %w", err)
 	}
