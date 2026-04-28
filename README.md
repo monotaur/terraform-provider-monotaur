@@ -94,6 +94,21 @@ use, and the `monotaur` provider will be listed with no version constraint.
 | `endpoint` | string | no | Base URL of the Monotaur API. Falls back to `MONOTAUR_ENDPOINT` env var. |
 | `api_key`  | string | no | API key for authentication. Falls back to `MONOTAUR_API_KEY` env var. Marked sensitive. |
 
+## Quick Start (E2E Testing)
+
+To run the provider's end-to-end test suite against the staging API, set two
+environment variables and run `make e2e`:
+
+```bash
+export MONOTAUR_ENDPOINT=https://api.staging.monotaur.io
+export MONOTAUR_API_KEY=<your-staging-key>
+make e2e
+```
+
+See [docs/e2e.md](docs/e2e.md) for the full contributor guide — prerequisites,
+per-test naming convention, sweeper behavior, reading output files, and
+troubleshooting common errors.
+
 ## Development
 
 | Command        | Description                                |
@@ -102,6 +117,7 @@ use, and the `monotaur` provider will be listed with no version constraint.
 | `make install` | Build and copy binary to local plugin cache |
 | `make test`    | Run all unit tests                         |
 | `make lint`    | Run golangci-lint                          |
+| `make e2e`     | Run the full E2E suite (see docs/e2e.md)   |
 | `make clean`   | Remove build artifacts                     |
 
 ## License
