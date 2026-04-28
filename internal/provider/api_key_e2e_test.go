@@ -110,7 +110,7 @@ func TestAccMonotaurApiKey_basic(t *testing.T) {
 // TestAccMonotaurApiKey_nodrift: write-once key_value persists across plans
 //
 // Steps:
-//  1. Create an API key. Capture key_value from state.
+//  1. Create an API key. Verify key_value is populated after create.
 //  2. PlanOnly — assert no diff. Verify UseStateForUnknown preserves key_value.
 //  3. PlanOnly again — assert no diff after a second read cycle.
 // ---------------------------------------------------------------------------
