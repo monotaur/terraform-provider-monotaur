@@ -1,0 +1,22 @@
+# Provider binary
+terraform-provider-monotaur
+
+# Terraform dev artifacts
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+
+# Go build cache
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
