@@ -25,6 +25,16 @@ test: ## Run unit tests
 testacc: ## Run acceptance tests against a live Monotaur API (requires TF_ACC=1, MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
 
+.PHONY: e2e-sweep
+e2e-sweep: ## Delete staging resources matching tfe2e-* prefix (requires TF_ACC=1, MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
+	@mkdir -p e2e-results
+	TF_ACC=1 go test ./internal/provider/... -v -run TestSweepAll -timeout 5m 2>&1 | tee e2e-results/sweep.txt; \
+	exit $${PIPESTATUS[0]}
+
+.PHONY: e2e
+e2e: e2e-sweep ## Run full end-to-end acceptance tests (runs sweeper first; requires TF_ACC=1, MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
+	TF_ACC=1 go test ./internal/provider/... -v $(TESTARGS) -timeout 120m
+
 .PHONY: lint
 lint: ## Run golangci-lint
 	golangci-lint run ./...
