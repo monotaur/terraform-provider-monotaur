@@ -45,10 +45,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_basic(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "alarm-basic")
 	componentName := acctest.Name("component", "alarm-basic")
 	monitorName := acctest.Name("monitor", "alarm-basic")
@@ -111,10 +107,6 @@ func TestAccMonotaurAlarm_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_drift(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "alarm-drift")
 	componentName := acctest.Name("component", "alarm-drift")
 	monitorName := acctest.Name("monitor", "alarm-drift")
@@ -190,10 +182,6 @@ func TestAccMonotaurAlarm_drift(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_monitorChange(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	labelName := acctest.Name("label", "alarm-monchg")
 	componentName := acctest.Name("component", "alarm-monchg")
 	monitor1Name := acctest.Name("monitor", "alarm-monchg-1")
@@ -308,6 +296,7 @@ resource "monotaur_monitor" "monitor2" {
 }
 
 resource "monotaur_alarm" "test" {
+  # activeMonitor must be "monitor1" or "monitor2" — the Terraform resource name to use as monitor_id.
   monitor_id = monotaur_monitor.%s.id
 }
 `, labelName, componentName, monitor1Name, monitor2Name, activeMonitor)
