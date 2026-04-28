@@ -9,6 +9,7 @@ package provider_test
 // unset or override the standard env vars.
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"testing"
@@ -29,12 +30,18 @@ func TestAccMonotaurProvider_missingAPIKey(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	// Unset the env var for the duration of this test.
-	origKey := os.Getenv("MONOTAUR_API_KEY")
+	// Unset the env var for the duration of this test, restoring it on completion.
+	// os.LookupEnv distinguishes "unset" from "set to empty string"; t.Cleanup
+	// runs even when t.Fatal is called, unlike defer in a conditional.
+	origKey, wasSet := os.LookupEnv("MONOTAUR_API_KEY")
 	os.Unsetenv("MONOTAUR_API_KEY")
-	if origKey != "" {
-		defer os.Setenv("MONOTAUR_API_KEY", origKey)
-	}
+	t.Cleanup(func() {
+		if wasSet {
+			os.Setenv("MONOTAUR_API_KEY", origKey)
+		} else {
+			os.Unsetenv("MONOTAUR_API_KEY")
+		}
+	})
 
 	endpoint := os.Getenv("MONOTAUR_ENDPOINT")
 	if endpoint == "" {
@@ -113,7 +120,7 @@ func TestAccMonotaurProvider_badEndpoint(t *testing.T) {
 				// Use a syntactically valid but non-routable hostname to trigger a DNS failure.
 				Config: providerWithLabelRead("https://this-host-does-not-exist.monotaur.invalid", apiKey),
 				// Provider must surface a clear connection error, not a crash.
-				ExpectError: regexp.MustCompile(`(?i)no such host|connection refused|dial|network|unable to connect|error`),
+				ExpectError: regexp.MustCompile(`(?i)no such host|connection refused|dial tcp|i/o timeout|unable to connect`),
 			},
 		},
 	})
@@ -169,32 +176,32 @@ func TestAccMonotaurProvider_blockOverridesEnvVar(t *testing.T) {
 // omitted entirely (not set to ""). This exercises the missing-credential path.
 func providerConfigOnly(endpoint, apiKey string) string {
 	if apiKey == "" {
-		return `
+		return fmt.Sprintf(`
 provider "monotaur" {
-  endpoint = "` + endpoint + `"
+  endpoint = %q
 }
-`
+`, endpoint)
 	}
-	return `
+	return fmt.Sprintf(`
 provider "monotaur" {
-  endpoint = "` + endpoint + `"
-  api_key  = "` + apiKey + `"
+  endpoint = %q
+  api_key  = %q
 }
-`
+`, endpoint, apiKey)
 }
 
 // providerWithLabelRead returns a Terraform config with a provider block and a
 // label data source read. The data source read forces the provider to make a
 // real API call, surfacing connection and auth errors.
 func providerWithLabelRead(endpoint, apiKey string) string {
-	return `
+	return fmt.Sprintf(`
 provider "monotaur" {
-  endpoint = "` + endpoint + `"
-  api_key  = "` + apiKey + `"
+  endpoint = %q
+  api_key  = %q
 }
 
 data "monotaur_label" "probe" {
   id = "00000000-0000-0000-0000-000000000000"
 }
-`
+`, endpoint, apiKey)
 }
