@@ -81,6 +81,7 @@ func createServiceAccount(name string) (id string, cleanup func(), err error) {
 		deleteURL := fmt.Sprintf("%s/admin/service-accounts/%s", endpoint, saID)
 		delReq, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "createServiceAccount cleanup: build DELETE request for %s: %v\n", saID, err)
 			return
 		}
 		delReq.Header.Set("Accept", ct)
@@ -89,9 +90,15 @@ func createServiceAccount(name string) (id string, cleanup func(), err error) {
 		delClient := &http.Client{Timeout: 30 * time.Second}
 		delResp, err := delClient.Do(delReq)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "createServiceAccount cleanup: DELETE /admin/service-accounts/%s: %v\n", saID, err)
 			return
 		}
-		delResp.Body.Close()
+		defer delResp.Body.Close()
+		if delResp.StatusCode < 200 || delResp.StatusCode >= 300 {
+			raw, _ := io.ReadAll(delResp.Body)
+			fmt.Fprintf(os.Stderr, "createServiceAccount cleanup: DELETE /admin/service-accounts/%s: HTTP %d: %s\n",
+				saID, delResp.StatusCode, string(raw))
+		}
 	}
 
 	return saID, cleanupFn, nil
