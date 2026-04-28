@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -153,7 +154,7 @@ func TestAccMonotaurSensor_drift(t *testing.T) {
 					if capturedID == "" {
 						t.Fatalf("drift test: capturedID is empty — create step must have failed")
 					}
-					if err := sensorOutOfBandPatch(capturedID, "out-of-band-name"); err != nil {
+					if err := sensorOutOfBandPatch(capturedID, acctest.Name("sensor", "drift-oob")); err != nil {
 						t.Fatalf("drift test: out-of-band PATCH failed: %v", err)
 					}
 				},
@@ -356,7 +357,8 @@ func sensorOutOfBandPatch(id, newName string) error {
 	req.Header.Set("Accept", ct)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("execute PATCH: %w", err)
 	}
