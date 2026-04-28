@@ -16,8 +16,6 @@ package provider_test
 // All resource names use acctest.Name() for collision-safe, sweepable identifiers.
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,7 +137,7 @@ func TestAccMonotaurErrorPath_invalidInput(t *testing.T) {
 				// The provider must surface the API error — not a raw HTTP dump —
 				// as a Terraform diagnostic. A 422 response from the Monotaur API
 				// includes a JSON:API errors[] body describing which field failed.
-				ExpectError: regexp.MustCompile(`(?i)error|invalid|unprocessable|422`),
+				ExpectError: regexp.MustCompile(`(?i)invalid|unprocessable|422`),
 			},
 		},
 	})
@@ -220,56 +218,6 @@ func labelOutOfBandDelete(id string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("DELETE /labels/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
-	}
-	return nil
-}
-
-// labelOutOfBandPatchName performs a raw JSON:API PATCH on /labels/{id} to
-// change the name field, simulating an out-of-band operator change.
-// Unused in this file but available for future error-path tests.
-//
-//nolint:unused
-func labelOutOfBandPatchName(id, newName string) error {
-	endpoint := strings.TrimRight(os.Getenv("MONOTAUR_ENDPOINT"), "/")
-	apiKey := os.Getenv("MONOTAUR_API_KEY")
-	if endpoint == "" || apiKey == "" {
-		return fmt.Errorf("MONOTAUR_ENDPOINT and MONOTAUR_API_KEY must be set")
-	}
-
-	payload := map[string]interface{}{
-		"data": map[string]interface{}{
-			"type": "labels",
-			"id":   id,
-			"attributes": map[string]interface{}{
-				"name": newName,
-			},
-		},
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal patch body: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/labels/%s", endpoint, id)
-	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create PATCH request: %w", err)
-	}
-	const ct = "application/vnd.api+json; ext=openapi"
-	req.Header.Set("Content-Type", ct)
-	req.Header.Set("Accept", ct)
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("execute PATCH: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("PATCH /labels/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
 	}
 	return nil
 }

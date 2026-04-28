@@ -36,6 +36,8 @@ e2e-sweep: ## Delete staging resources matching tfe2e-* prefix (requires MONOTAU
 e2e: e2e-sweep ## Run the full E2E suite (runs sweeper first; requires MONOTAUR_ENDPOINT, MONOTAUR_API_KEY — see docs/e2e.md)
 	@bash scripts/e2e-preflight.sh
 	@mkdir -p e2e-results
+	@set -o pipefail; \
+	trap 'go run ./internal/acctest/summary/ --input e2e-results/raw.jsonl --output e2e-results/summary.md' EXIT; \
 	TF_ACC=1 go run gotest.tools/gotestsum \
 		--format pkgname-and-test-fails \
 		--junitfile e2e-results/junit.xml \
