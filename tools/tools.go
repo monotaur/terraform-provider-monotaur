@@ -10,4 +10,7 @@ import (
 	// tfplugindocs generates Registry-compatible Markdown docs from provider
 	// schema descriptions and the examples/ tree.
 	_ "github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs"
+
+	// gotestsum wraps go test with better output formatting and JUnit XML reporting.
+	_ "gotest.tools/gotestsum"
 )
