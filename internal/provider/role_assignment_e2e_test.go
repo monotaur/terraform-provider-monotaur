@@ -15,6 +15,7 @@ package provider_test
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -87,7 +88,7 @@ func TestAccMonotaurRoleAssignment_basic(t *testing.T) {
 			// Step 3: Change both role_id and service_account_id. Because both attributes
 			// are marked RequiresReplace, the framework must plan a DestroyBeforeCreate.
 			{
-				Config: testAccRoleAssignmentReplaceConfig(roleName, secondRoleName, saID, saID2),
+				Config: testAccRoleAssignmentReplaceConfig(roleName, secondRoleName, saID2),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectResourceAction(
@@ -209,7 +210,7 @@ resource "monotaur_role_assignment" "test" {
 // not destroyed) and a monotaur_role_assignment that references the second role
 // and the second service account. This exercises the RequiresReplace semantics
 // on both role_id and service_account_id.
-func testAccRoleAssignmentReplaceConfig(roleName, secondRoleName, _, saID2 string) string {
+func testAccRoleAssignmentReplaceConfig(roleName, secondRoleName, saID2 string) string {
 	return fmt.Sprintf(`
 resource "monotaur_role" "test" {
   name        = %q
@@ -260,7 +261,8 @@ func roleAssignmentOutOfBandDelete(id string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("DELETE /admin/role-assignments/%s: HTTP %d", id, resp.StatusCode)
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DELETE /admin/role-assignments/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
 	}
 	return nil
 }
