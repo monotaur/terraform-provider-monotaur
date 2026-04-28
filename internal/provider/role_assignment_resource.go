@@ -120,6 +120,7 @@ func (r *roleAssignmentResource) Create(ctx context.Context, req resource.Create
 		Data: api.DataInCreateAdminRoleAssignmentRequest{
 			Type: api.ResourceTypeAdminRoleAssignments,
 			Relationships: &api.RelationshipsInCreateAdminRoleAssignmentRequest{
+				OpenapiDiscriminator: api.ResourceTypeAdminRoleAssignments,
 				Role: api.ToOneAdminRoleInRequest{
 					Data: api.AdminRoleIdentifierInRequest{
 						Id:   plan.RoleID.ValueString(),
@@ -294,6 +295,7 @@ func flattenRoleAssignment(data api.DataInAdminRoleAssignmentResponse, model *ro
 // from individual role and service account IDs.
 func BuildRoleAssignmentRelationships(roleID, serviceAccountID string) *api.RelationshipsInCreateAdminRoleAssignmentRequest {
 	return &api.RelationshipsInCreateAdminRoleAssignmentRequest{
+		OpenapiDiscriminator: api.ResourceTypeAdminRoleAssignments,
 		Role: api.ToOneAdminRoleInRequest{
 			Data: api.AdminRoleIdentifierInRequest{
 				Id:   roleID,

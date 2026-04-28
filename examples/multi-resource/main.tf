@@ -31,7 +31,7 @@ provider "monotaur" {
 resource "monotaur_label" "env_production" {
   text  = "production"
   color = "#E53935"
-  icon  = "flag"
+  icon  = "🚩"
 }
 
 resource "monotaur_label" "team_platform" {

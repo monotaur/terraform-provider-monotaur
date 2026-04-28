@@ -16,7 +16,7 @@ Manages a Monotaur label. Labels are tags that can be attached to components, mo
 resource "monotaur_label" "production" {
   text  = "production"
   color = "#E53935"
-  icon  = "flag"
+  icon  = "🚩"
 }
 ```
 
@@ -32,7 +32,7 @@ resource "monotaur_label" "production" {
 - `calendar_event_ids` (List of String) IDs of calendar events associated with this label.
 - `color` (String) Optional hex colour code for the label (e.g. `#FF5733`).
 - `component_ids` (List of String) IDs of components associated with this label.
-- `icon` (String) Optional icon identifier for the label.
+- `icon` (String) Optional icon for the label. Must be a single Unicode Extended Pictographic codepoint (an emoji), e.g. `🚩`.
 - `monitor_ids` (List of String) IDs of monitors associated with this label.
 
 ### Read-Only

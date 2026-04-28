@@ -135,7 +135,8 @@ func (r *monitorStatusRuleResource) Create(ctx context.Context, req resource.Cre
 	}
 
 	attrs := &api.AttributesInCreateMonitorStatusRuleRequest{
-		Predicate: plan.Predicate.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeMonitorStatusRules,
+		Predicate:            plan.Predicate.ValueString(),
 	}
 
 	if !plan.Status.IsNull() && !plan.Status.IsUnknown() {
@@ -246,7 +247,8 @@ func (r *monitorStatusRuleResource) Update(ctx context.Context, req resource.Upd
 
 	predicateVal := plan.Predicate.ValueString()
 	attrs := &api.AttributesInUpdateMonitorStatusRuleRequest{
-		Predicate: &predicateVal,
+		OpenapiDiscriminator: api.ResourceTypeMonitorStatusRules,
+		Predicate:            &predicateVal,
 	}
 
 	if !plan.Status.IsNull() && !plan.Status.IsUnknown() {
@@ -346,6 +348,7 @@ func buildCreateMonitorStatusRuleRelationships(_ context.Context, plan monitorSt
 	var diags diag.Diagnostics
 
 	rels := &api.RelationshipsInCreateMonitorStatusRuleRequest{
+		OpenapiDiscriminator: api.ResourceTypeMonitorStatusRules,
 		Monitor: api.ToOneMonitorInRequest{
 			Data: api.MonitorIdentifierInRequest{
 				Id:   plan.MonitorID.ValueString(),
@@ -362,7 +365,9 @@ func buildCreateMonitorStatusRuleRelationships(_ context.Context, plan monitorSt
 func buildUpdateMonitorStatusRuleRelationships(_ context.Context, plan monitorStatusRuleResourceModel) (*api.RelationshipsInUpdateMonitorStatusRuleRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInUpdateMonitorStatusRuleRequest{}
+	rels := &api.RelationshipsInUpdateMonitorStatusRuleRequest{
+		OpenapiDiscriminator: api.ResourceTypeMonitorStatusRules,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.ToOneMonitorInRequest{

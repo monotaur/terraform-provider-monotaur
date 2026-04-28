@@ -135,9 +135,10 @@ func (r *sensorResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	attrs := &api.AttributesInCreateSensorRequest{
-		Name:       plan.Name.ValueString(),
-		PluginName: plan.PluginName.ValueString(),
-		Type:       plan.Type.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeSensors,
+		Name:                 plan.Name.ValueString(),
+		PluginName:           plan.PluginName.ValueString(),
+		Type:                 plan.Type.ValueString(),
 	}
 
 	if !plan.Parameters.IsNull() && !plan.Parameters.IsUnknown() {
@@ -244,9 +245,10 @@ func (r *sensorResource) Update(ctx context.Context, req resource.UpdateRequest,
 	pluginNameVal := plan.PluginName.ValueString()
 	typeVal := plan.Type.ValueString()
 	attrs := &api.AttributesInUpdateSensorRequest{
-		Name:       &nameVal,
-		PluginName: &pluginNameVal,
-		Type:       &typeVal,
+		OpenapiDiscriminator: api.ResourceTypeSensors,
+		Name:                 &nameVal,
+		PluginName:           &pluginNameVal,
+		Type:                 &typeVal,
 	}
 
 	if !plan.Parameters.IsNull() && !plan.Parameters.IsUnknown() {
@@ -340,6 +342,7 @@ func buildCreateSensorRelationships(_ context.Context, plan sensorResourceModel)
 	var diags diag.Diagnostics
 
 	rels := &api.RelationshipsInCreateSensorRequest{
+		OpenapiDiscriminator: api.ResourceTypeSensors,
 		Probe: api.ToOneProbeInRequest{
 			Data: api.ProbeIdentifierInRequest{
 				Id:   plan.ProbeID.ValueString(),
@@ -356,7 +359,9 @@ func buildCreateSensorRelationships(_ context.Context, plan sensorResourceModel)
 func buildUpdateSensorRelationships(_ context.Context, plan sensorResourceModel) (*api.RelationshipsInUpdateSensorRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInUpdateSensorRequest{}
+	rels := &api.RelationshipsInUpdateSensorRequest{
+		OpenapiDiscriminator: api.ResourceTypeSensors,
+	}
 
 	if !plan.ProbeID.IsNull() && !plan.ProbeID.IsUnknown() {
 		rels.Probe = &api.ToOneProbeInRequest{

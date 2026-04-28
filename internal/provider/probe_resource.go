@@ -140,7 +140,9 @@ func (r *probeResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	attrs := &api.AttributesInCreateProbeRequest{}
+	attrs := &api.AttributesInCreateProbeRequest{
+		OpenapiDiscriminator: api.ResourceTypeProbes,
+	}
 
 	if !plan.Active.IsNull() && !plan.Active.IsUnknown() {
 		v := plan.Active.ValueBool()
@@ -248,7 +250,9 @@ func (r *probeResource) Update(ctx context.Context, req resource.UpdateRequest, 
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateProbeRequest{}
+	attrs := &api.AttributesInUpdateProbeRequest{
+		OpenapiDiscriminator: api.ResourceTypeProbes,
+	}
 
 	if !plan.Active.IsNull() && !plan.Active.IsUnknown() {
 		v := plan.Active.ValueBool()
@@ -347,6 +351,7 @@ func buildCreateProbeRelationships(ctx context.Context, plan probeResourceModel)
 	var diags diag.Diagnostics
 
 	rels := &api.RelationshipsInCreateProbeRequest{
+		OpenapiDiscriminator: api.ResourceTypeProbes,
 		Monitor: api.ToOneMonitorInRequest{
 			Data: api.MonitorIdentifierInRequest{
 				Id:   plan.MonitorID.ValueString(),
@@ -374,7 +379,9 @@ func buildCreateProbeRelationships(ctx context.Context, plan probeResourceModel)
 // buildUpdateProbeRelationships converts the plan's relationship ID fields
 // into the API request type for update operations.
 func buildUpdateProbeRelationships(ctx context.Context, plan probeResourceModel) (*api.RelationshipsInUpdateProbeRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInUpdateProbeRequest{}
+	rels := &api.RelationshipsInUpdateProbeRequest{
+		OpenapiDiscriminator: api.ResourceTypeProbes,
+	}
 	var diags diag.Diagnostics
 
 	// monitor_id — to-one

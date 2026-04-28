@@ -144,8 +144,9 @@ func (r *secretResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	attrs := &api.AttributesInCreateSecretRequest{
-		Name:  plan.Name.ValueString(),
-		Value: plan.Value.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeSecrets,
+		Name:                 plan.Name.ValueString(),
+		Value:                plan.Value.ValueString(),
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
@@ -251,7 +252,9 @@ func (r *secretResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateSecretRequest{}
+	attrs := &api.AttributesInUpdateSecretRequest{
+		OpenapiDiscriminator: api.ResourceTypeSecrets,
+	}
 
 	if !plan.Name.IsNull() && !plan.Name.IsUnknown() {
 		v := plan.Name.ValueString()
@@ -356,7 +359,9 @@ func (r *secretResource) ImportState(ctx context.Context, req resource.ImportSta
 func buildCreateSecretRelationships(_ context.Context, plan secretResourceModel) (*api.RelationshipsInCreateSecretRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInCreateSecretRequest{}
+	rels := &api.RelationshipsInCreateSecretRequest{
+		OpenapiDiscriminator: api.ResourceTypeSecrets,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.NullableToOneMonitorInRequest{
@@ -375,7 +380,9 @@ func buildCreateSecretRelationships(_ context.Context, plan secretResourceModel)
 func buildUpdateSecretRelationships(_ context.Context, plan secretResourceModel) (*api.RelationshipsInUpdateSecretRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInUpdateSecretRequest{}
+	rels := &api.RelationshipsInUpdateSecretRequest{
+		OpenapiDiscriminator: api.ResourceTypeSecrets,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.NullableToOneMonitorInRequest{

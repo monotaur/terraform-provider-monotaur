@@ -185,8 +185,9 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	attrs := &api.AttributesInCreateAdminApiKeyRequest{
-		Name:        plan.Name.ValueString(),
-		Environment: plan.Environment.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeAdminApiKeys,
+		Name:                 plan.Name.ValueString(),
+		Environment:          plan.Environment.ValueString(),
 	}
 
 	if !plan.ExpiresAt.IsNull() && !plan.ExpiresAt.IsUnknown() {

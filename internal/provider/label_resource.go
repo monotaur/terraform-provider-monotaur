@@ -87,7 +87,7 @@ func (r *labelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"icon": schema.StringAttribute{
-				MarkdownDescription: "Optional icon identifier for the label.",
+				MarkdownDescription: "Optional icon for the label. Must be a single Unicode Extended Pictographic codepoint (an emoji), e.g. `🚩`.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -171,7 +171,8 @@ func (r *labelResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	attrs := &api.AttributesInCreateLabelRequest{
-		Text: plan.Text.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeLabels,
+		Text:                 plan.Text.ValueString(),
 	}
 	if !plan.Color.IsNull() && !plan.Color.IsUnknown() {
 		v := plan.Color.ValueString()
@@ -278,7 +279,9 @@ func (r *labelResource) Update(ctx context.Context, req resource.UpdateRequest, 
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateLabelRequest{}
+	attrs := &api.AttributesInUpdateLabelRequest{
+		OpenapiDiscriminator: api.ResourceTypeLabels,
+	}
 	textVal := plan.Text.ValueString()
 	attrs.Text = &textVal
 
@@ -380,7 +383,9 @@ func (r *labelResource) ImportState(ctx context.Context, req resource.ImportStat
 // buildCreateLabelRelationships converts the plan's relationship ID lists into
 // the API request type for create operations.
 func buildCreateLabelRelationships(ctx context.Context, plan labelResourceModel) (*api.RelationshipsInCreateLabelRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInCreateLabelRequest{}
+	rels := &api.RelationshipsInCreateLabelRequest{
+		OpenapiDiscriminator: api.ResourceTypeLabels,
+	}
 	var diags diag.Diagnostics
 
 	if !plan.CalendarEventIDs.IsNull() && !plan.CalendarEventIDs.IsUnknown() {
@@ -425,7 +430,9 @@ func buildCreateLabelRelationships(ctx context.Context, plan labelResourceModel)
 // buildUpdateLabelRelationships converts the plan's relationship ID lists into
 // the API request type for update operations.
 func buildUpdateLabelRelationships(ctx context.Context, plan labelResourceModel) (*api.RelationshipsInUpdateLabelRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInUpdateLabelRequest{}
+	rels := &api.RelationshipsInUpdateLabelRequest{
+		OpenapiDiscriminator: api.ResourceTypeLabels,
+	}
 	var diags diag.Diagnostics
 
 	if !plan.CalendarEventIDs.IsNull() && !plan.CalendarEventIDs.IsUnknown() {

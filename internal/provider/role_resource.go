@@ -117,8 +117,9 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	attrs := &api.AttributesInCreateAdminRoleRequest{
-		Name:        plan.Name.ValueString(),
-		Permissions: permissions,
+		OpenapiDiscriminator: api.ResourceTypeAdminRoles,
+		Name:                 plan.Name.ValueString(),
+		Permissions:          permissions,
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
@@ -215,7 +216,9 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateAdminRoleRequest{}
+	attrs := &api.AttributesInUpdateAdminRoleRequest{
+		OpenapiDiscriminator: api.ResourceTypeAdminRoles,
+	}
 
 	if !plan.Name.IsNull() && !plan.Name.IsUnknown() {
 		v := plan.Name.ValueString()

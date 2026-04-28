@@ -135,8 +135,9 @@ func (r *variableResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	attrs := &api.AttributesInCreateVariableRequest{
-		Name:  plan.Name.ValueString(),
-		Value: plan.Value.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeVariables,
+		Name:                 plan.Name.ValueString(),
+		Value:                plan.Value.ValueString(),
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
@@ -240,7 +241,9 @@ func (r *variableResource) Update(ctx context.Context, req resource.UpdateReques
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateVariableRequest{}
+	attrs := &api.AttributesInUpdateVariableRequest{
+		OpenapiDiscriminator: api.ResourceTypeVariables,
+	}
 
 	if !plan.Name.IsNull() && !plan.Name.IsUnknown() {
 		v := plan.Name.ValueString()
@@ -343,7 +346,9 @@ func (r *variableResource) ImportState(ctx context.Context, req resource.ImportS
 func buildCreateVariableRelationships(_ context.Context, plan variableResourceModel) (*api.RelationshipsInCreateVariableRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInCreateVariableRequest{}
+	rels := &api.RelationshipsInCreateVariableRequest{
+		OpenapiDiscriminator: api.ResourceTypeVariables,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.NullableToOneMonitorInRequest{
@@ -362,7 +367,9 @@ func buildCreateVariableRelationships(_ context.Context, plan variableResourceMo
 func buildUpdateVariableRelationships(_ context.Context, plan variableResourceModel) (*api.RelationshipsInUpdateVariableRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInUpdateVariableRequest{}
+	rels := &api.RelationshipsInUpdateVariableRequest{
+		OpenapiDiscriminator: api.ResourceTypeVariables,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.NullableToOneMonitorInRequest{

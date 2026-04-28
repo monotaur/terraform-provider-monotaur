@@ -152,7 +152,8 @@ func (r *componentResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	attrs := &api.AttributesInCreateComponentRequest{
-		Name: plan.Name.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeComponents,
+		Name:                 plan.Name.ValueString(),
 	}
 
 	rels, diags := buildCreateComponentRelationships(ctx, plan)
@@ -253,7 +254,8 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 
 	nameVal := plan.Name.ValueString()
 	attrs := &api.AttributesInUpdateComponentRequest{
-		Name: &nameVal,
+		OpenapiDiscriminator: api.ResourceTypeComponents,
+		Name:                 &nameVal,
 	}
 
 	rels, diags := buildUpdateComponentRelationships(ctx, plan)
@@ -340,7 +342,9 @@ func (r *componentResource) ImportState(ctx context.Context, req resource.Import
 // buildCreateComponentRelationships converts the plan's relationship ID fields
 // into the API request type for create operations.
 func buildCreateComponentRelationships(ctx context.Context, plan componentResourceModel) (*api.RelationshipsInCreateComponentRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInCreateComponentRequest{}
+	rels := &api.RelationshipsInCreateComponentRequest{
+		OpenapiDiscriminator: api.ResourceTypeComponents,
+	}
 	var diags diag.Diagnostics
 
 	// business_hours_id — to-one (nullable)
@@ -399,7 +403,9 @@ func buildCreateComponentRelationships(ctx context.Context, plan componentResour
 // buildUpdateComponentRelationships converts the plan's relationship ID fields
 // into the API request type for update operations.
 func buildUpdateComponentRelationships(ctx context.Context, plan componentResourceModel) (*api.RelationshipsInUpdateComponentRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInUpdateComponentRequest{}
+	rels := &api.RelationshipsInUpdateComponentRequest{
+		OpenapiDiscriminator: api.ResourceTypeComponents,
+	}
 	var diags diag.Diagnostics
 
 	// business_hours_id — to-one (nullable)

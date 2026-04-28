@@ -150,7 +150,9 @@ func (r *alarmResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	attrs := &api.AttributesInCreateAlarmRequest{}
+	attrs := &api.AttributesInCreateAlarmRequest{
+		OpenapiDiscriminator: api.ResourceTypeAlarms,
+	}
 
 	if !plan.StartDateTime.IsNull() && !plan.StartDateTime.IsUnknown() {
 		t, err := time.Parse(time.RFC3339, plan.StartDateTime.ValueString())
@@ -276,7 +278,9 @@ func (r *alarmResource) Update(ctx context.Context, req resource.UpdateRequest, 
 
 	id := state.ID.ValueString()
 
-	attrs := &api.AttributesInUpdateAlarmRequest{}
+	attrs := &api.AttributesInUpdateAlarmRequest{
+		OpenapiDiscriminator: api.ResourceTypeAlarms,
+	}
 
 	if !plan.StartDateTime.IsNull() && !plan.StartDateTime.IsUnknown() {
 		t, err := time.Parse(time.RFC3339, plan.StartDateTime.ValueString())
@@ -393,6 +397,7 @@ func buildCreateAlarmRelationships(_ context.Context, plan alarmResourceModel) (
 	var diags diag.Diagnostics
 
 	rels := &api.RelationshipsInCreateAlarmRequest{
+		OpenapiDiscriminator: api.ResourceTypeAlarms,
 		Monitor: api.ToOneMonitorInRequest{
 			Data: api.MonitorIdentifierInRequest{
 				Id:   plan.MonitorID.ValueString(),
@@ -409,7 +414,9 @@ func buildCreateAlarmRelationships(_ context.Context, plan alarmResourceModel) (
 func buildUpdateAlarmRelationships(_ context.Context, plan alarmResourceModel) (*api.RelationshipsInUpdateAlarmRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	rels := &api.RelationshipsInUpdateAlarmRequest{}
+	rels := &api.RelationshipsInUpdateAlarmRequest{
+		OpenapiDiscriminator: api.ResourceTypeAlarms,
+	}
 
 	if !plan.MonitorID.IsNull() && !plan.MonitorID.IsUnknown() {
 		rels.Monitor = &api.ToOneMonitorInRequest{

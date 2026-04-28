@@ -148,7 +148,8 @@ func (r *monitorResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	attrs := &api.AttributesInCreateMonitorRequest{
-		Name: plan.Name.ValueString(),
+		OpenapiDiscriminator: api.ResourceTypeMonitors,
+		Name:                 plan.Name.ValueString(),
 	}
 
 	if !plan.Type.IsNull() && !plan.Type.IsUnknown() {
@@ -254,7 +255,8 @@ func (r *monitorResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	nameVal := plan.Name.ValueString()
 	attrs := &api.AttributesInUpdateMonitorRequest{
-		Name: &nameVal,
+		OpenapiDiscriminator: api.ResourceTypeMonitors,
+		Name:                 &nameVal,
 	}
 
 	if !plan.Type.IsNull() && !plan.Type.IsUnknown() {
@@ -346,7 +348,9 @@ func (r *monitorResource) ImportState(ctx context.Context, req resource.ImportSt
 // buildCreateMonitorRelationships converts the plan's relationship ID fields
 // into the API request type for create operations.
 func buildCreateMonitorRelationships(ctx context.Context, plan monitorResourceModel) (*api.RelationshipsInCreateMonitorRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInCreateMonitorRequest{}
+	rels := &api.RelationshipsInCreateMonitorRequest{
+		OpenapiDiscriminator: api.ResourceTypeMonitors,
+	}
 	var diags diag.Diagnostics
 
 	// component_ids — to-many
@@ -368,7 +372,9 @@ func buildCreateMonitorRelationships(ctx context.Context, plan monitorResourceMo
 // buildUpdateMonitorRelationships converts the plan's relationship ID fields
 // into the API request type for update operations.
 func buildUpdateMonitorRelationships(ctx context.Context, plan monitorResourceModel) (*api.RelationshipsInUpdateMonitorRequest, diag.Diagnostics) {
-	rels := &api.RelationshipsInUpdateMonitorRequest{}
+	rels := &api.RelationshipsInUpdateMonitorRequest{
+		OpenapiDiscriminator: api.ResourceTypeMonitors,
+	}
 	var diags diag.Diagnostics
 
 	// component_ids — to-many
