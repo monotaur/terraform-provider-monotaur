@@ -43,10 +43,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurRole_basic(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	name := acctest.Name("role", "1")
 	updatedName := acctest.Name("role", "1-upd")
 
@@ -96,10 +92,6 @@ func TestAccMonotaurRole_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurRole_drift(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	name := acctest.Name("role", "drift")
 
 	// capturedID is populated by the Check function in step 1 and consumed in
@@ -170,10 +162,6 @@ func TestAccMonotaurRole_drift(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurRole_permissionsCycle(t *testing.T) {
-	if os.Getenv("TF_ACC") == "" {
-		t.Skip("Set TF_ACC=1 to run acceptance tests")
-	}
-
 	name := acctest.Name("role", "permcycle")
 
 	resource.Test(t, resource.TestCase{
@@ -234,7 +222,7 @@ resource "monotaur_role" "test" {
 // Out-of-band mutation helper
 // ---------------------------------------------------------------------------
 
-// roleOutOfBandPatchName performs a raw JSON:API PATCH on /admin.roles/{id} to
+// roleOutOfBandPatchName performs a raw JSON:API PATCH on /admin/roles/{id} to
 // change only the name field, simulating a manual operator change outside
 // Terraform. This is intentionally not using the provider's client so the
 // provider does not see the change until the next Read/Refresh.
@@ -259,7 +247,7 @@ func roleOutOfBandPatchName(id, newName string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/admin.roles/%s", endpoint, id)
+	url := fmt.Sprintf("%s/admin/roles/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -277,7 +265,7 @@ func roleOutOfBandPatchName(id, newName string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /admin.roles/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /admin/roles/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }
