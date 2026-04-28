@@ -1,3 +1,4 @@
+SHELL            := /bin/bash
 BINARY_NAME      := terraform-provider-monotaur
 PROVIDER_ADDRESS := registry.terraform.io/monotaur/monotaur
 
@@ -25,8 +26,14 @@ test: ## Run unit tests
 testacc: ## Run acceptance tests against a live Monotaur API (requires TF_ACC=1, MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
 
+.PHONY: e2e-sweep
+e2e-sweep: ## Delete staging resources matching tfe2e-* prefix (requires MONOTAUR_ENDPOINT, MONOTAUR_API_KEY)
+	@mkdir -p e2e-results
+	TF_ACC=1 go test ./internal/provider/... -v -run TestSweepAll -timeout 5m 2>&1 | tee e2e-results/sweep.txt; \
+	exit $${PIPESTATUS[0]}
+
 .PHONY: e2e
-e2e: ## Run the full E2E suite (requires MONOTAUR_ENDPOINT, MONOTAUR_API_KEY — see docs/e2e.md)
+e2e: e2e-sweep ## Run the full E2E suite (runs sweeper first; requires MONOTAUR_ENDPOINT, MONOTAUR_API_KEY — see docs/e2e.md)
 	@bash scripts/e2e-preflight.sh
 	@mkdir -p e2e-results
 	TF_ACC=1 go run gotest.tools/gotestsum \

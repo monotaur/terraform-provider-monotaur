@@ -49,11 +49,21 @@ Contact your team to obtain staging credentials if you do not already have them.
 export MONOTAUR_ENDPOINT=https://api.staging.monotaur.io
 export MONOTAUR_API_KEY=<your-key>
 
+# Run the full suite (sweeper runs first automatically)
 make e2e
+
+# Run a single test
+make e2e-one TEST=TestAccMonotaurMonitor_basic
+
+# Run the sweeper standalone
+make e2e-sweep
 ```
 
 This runs the preflight check, then executes all tests under `./internal/provider/...`
 with a 30-minute timeout. Output is written to `e2e-results/`.
+
+`make e2e` automatically runs the resource sweeper (`make e2e-sweep`) before
+the test suite to remove any resources that were leaked by previous runs.
 
 ### Single test
 
@@ -126,7 +136,11 @@ grep '"Action":"fail"' e2e-results/raw.jsonl | jq .
 grep 'TestAccMonotaurLabel_update' e2e-results/raw.jsonl | jq -r '.Output // empty'
 ```
 
-All three files are git-ignored and re-created on every run.
+### `e2e-results/sweep.txt`
+
+Sweep summary (deletions and any errors) written by `make e2e-sweep`.
+
+All output files are git-ignored and re-created on every run.
 
 ## Resource naming
 
@@ -151,20 +165,71 @@ purposes:
 When writing a new test, always use `acctest.Name(...)` for resource names.
 Never use hard-coded strings.
 
-## Sweeper behavior
+## Sweepers
 
-`make e2e-sweep` deletes all resources whose names match `tfe2e-*` in the
-staging environment.
+### Purpose
+
+Each acceptance test creates real resources on the staging API. When a test
+fails mid-flight — or when the test process is killed — those resources are
+left behind. Sweepers clean them up by deleting any resource whose name starts
+with the `tfe2e-` prefix.
+
+### Naming convention
+
+All test resources must be named with the `tfe2e-` prefix (e.g. `tfe2e-my-label`).
+Sweepers use `strings.HasPrefix(name, "tfe2e-")` to identify and delete test
+resources without touching production data.
+
+Resources that have no name of their own (alarms, probes, monitor status rules,
+role assignments) are swept by cross-referencing their parent resource. For
+example, a probe is deleted when its parent monitor has a `tfe2e-` name.
+
+### Deletion order
+
+Sweepers delete resources in dependency order so that child resources are
+removed before their parents:
+
+1. `api_key`
+2. `role_assignment`
+3. `role`
+4. `service_account`
+5. `monitor_status_rule`
+6. `alarm`
+7. `variable`
+8. `secret`
+9. `probe`
+10. `sensor`
+11. `monitor`
+12. `component`
+13. `label`
+
+### Sweeper behaviour
+
+- Each deletion is logged at the `[INFO]` level with the resource type, name, and ID.
+- A failure to delete a single resource is non-fatal: the sweeper logs a
+  `[WARN]` and continues to the next resource.
+- The total number of deletions is emitted at the end.
+- A summary is written to `e2e-results/sweep.txt` (the directory is gitignored).
+- `make e2e-sweep` exits non-zero if any sweeper returns an error, making it safe
+  to use as a gate in CI pipelines.
 
 Key facts:
 
 - The sweeper runs automatically before `make e2e` to clear any leftover state
   from previous interrupted runs.
 - Nightly CI also runs `make e2e-sweep` as a standalone job to keep staging tidy.
-- Sweeper failures are logged and reported but are **non-fatal** for the test
-  suite — the suite continues even if the sweep fails.
 - Run `make e2e-sweep` manually any time you want to clean up staging without
   running the full suite.
+
+## Nightly safety net
+
+A GitHub Actions workflow (`.github/workflows/e2e-sweep.yml`) runs the sweeper
+against staging every night at 03:00 UTC and on manual dispatch. It uses the
+`MONOTAUR_STAGING_ENDPOINT` and `MONOTAUR_STAGING_API_KEY` repository secrets.
+
+This provides a safety net for resources leaked by any workflow — including
+runs that were cancelled or timed out — and keeps the staging environment clean
+between scheduled test runs.
 
 ## Debugging a failing test
 
