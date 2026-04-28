@@ -14,6 +14,7 @@
 package provider_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -103,7 +104,7 @@ func (c *sweepClient) delete(ctx context.Context, path string) error {
 // deleteWithBody performs an authenticated DELETE with a JSON body (used for
 // API key deletion via the service-account relationship endpoint).
 func (c *sweepClient) deleteWithBody(ctx context.Context, path string, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -674,7 +675,7 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 // ---------------------------------------------------------------------------
 
 func TestMain(m *testing.M) {
-	if os.Getenv("SWEEP") == "true" || os.Getenv("TF_ACC") == "1" {
+	if os.Getenv("SWEEP") == "true" {
 		if os.Getenv("MONOTAUR_ENDPOINT") != "" && os.Getenv("MONOTAUR_API_KEY") != "" {
 			log.Println("[INFO] sweeper: running pre-suite sweep...")
 			ctx := context.Background()
