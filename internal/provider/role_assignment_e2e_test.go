@@ -132,6 +132,10 @@ func createServiceAccount(name string) (id string, cleanup func(), err error) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurRoleAssignment_basic(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+
 	roleName := acctest.Name("role", "ra-basic")
 	secondRoleName := acctest.Name("role", "ra-basic-2")
 
@@ -202,6 +206,10 @@ func TestAccMonotaurRoleAssignment_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurRoleAssignment_drift(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+
 	roleName := acctest.Name("role", "ra-drift")
 
 	saID, saCleanup, err := createServiceAccount(acctest.Name("sa", "ra-drift"))
