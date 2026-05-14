@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -208,7 +209,13 @@ func (r *probeResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_probe: reading probe", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().GetProbe(ctx, id, &api.GetProbeParams{})
+	// Request the monitor and sensors relationships via `?include=monitor,sensors`
+	// so the response populates Relationships.Monitor.Data and Relationships.Sensors.Data.
+	// Without this, a bare GET echoes relationships with `links` only, leaving
+	// monitor_id null after import and sensor_ids empty (see flattenProbe).
+	include := "monitor,sensors"
+	query := map[string]*string{"include": &include}
+	apiResp, err := r.client.Inner().GetProbe(ctx, id, &api.GetProbeParams{Query: &query})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Probe", "Could not read probe "+id+": "+err.Error())
 		return
@@ -293,7 +300,16 @@ func (r *probeResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInProbeResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetProbe(ctx, id, &api.GetProbeParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Probe After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInProbeResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Probe Response", err.Error())
 		return
@@ -448,30 +464,29 @@ func flattenProbe(ctx context.Context, data api.DataInProbeResponse, model *prob
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
+	// Relationships often arrive with only `links` (no embedded `data`). When
+	// `data` is absent, preserve the prior model value — the plan for
+	// create/update, or the state for read — to avoid "was X, but now null" /
+	// "element 0 has vanished" inconsistency errors after a successful apply.
+	rels := data.Relationships
 
-		// monitor_id — to-one
-		if rels.Monitor != nil && rels.Monitor.Data != nil {
-			model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
-		} else {
-			model.MonitorID = types.StringNull()
-		}
-
-		// sensor_ids — to-many
-		if rels.Sensors != nil && rels.Sensors.Data != nil {
-			ids := make([]string, len(*rels.Sensors.Data))
-			for i, item := range *rels.Sensors.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.SensorIDs = list
-		} else {
-			model.SensorIDs = types.ListValueMust(types.StringType, nil)
-		}
-	} else {
+	// monitor_id — to-one
+	if rels != nil && rels.Monitor != nil && rels.Monitor.Data != nil {
+		model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
+	} else if model.MonitorID.IsUnknown() {
 		model.MonitorID = types.StringNull()
+	}
+
+	// sensor_ids — to-many
+	if rels != nil && rels.Sensors != nil && rels.Sensors.Data != nil {
+		ids := make([]string, len(*rels.Sensors.Data))
+		for i, item := range *rels.Sensors.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.SensorIDs = list
+	} else if model.SensorIDs.IsNull() || model.SensorIDs.IsUnknown() {
 		model.SensorIDs = types.ListValueMust(types.StringType, nil)
 	}
 

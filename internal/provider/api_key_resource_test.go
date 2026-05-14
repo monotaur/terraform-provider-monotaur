@@ -295,50 +295,54 @@ func TestFlattenApiKey_setsServiceAccountIDFromRelationships(t *testing.T) {
 	}
 }
 
-func TestFlattenApiKey_nullsServiceAccountIDWhenRelationshipsAbsent(t *testing.T) {
+// JSON:API responses omit relationship `data` unless explicitly included, so
+// flattenApiKey preserves the caller-supplied model value when the response
+// has no relationship data. The following three tests verify that preservation
+// across the three "data absent" shapes.
+func TestFlattenApiKey_preservesServiceAccountIDWhenRelationshipsAbsent(t *testing.T) {
 	ctx := context.Background()
 	fixture := apiKeyFlattenFixture()
 	fixture.Relationships = nil
 
-	var model provider.ApiKeyResourceModelForTest
+	model := provider.ApiKeyResourceModelForTest{ServiceAccountID: types.StringValue("sa-preserved")}
 	diags := provider.FlattenApiKeyForTest(ctx, fixture, &model)
 	if diags.HasError() {
 		t.Fatalf("FlattenApiKeyForTest returned errors: %v", diags)
 	}
-	if !model.ServiceAccountID.IsNull() {
-		t.Errorf("ServiceAccountID: expected null, got %q", model.ServiceAccountID.ValueString())
+	if got := model.ServiceAccountID.ValueString(); got != "sa-preserved" {
+		t.Errorf("ServiceAccountID: want %q (preserved), got %q", "sa-preserved", got)
 	}
 }
 
-func TestFlattenApiKey_nullsServiceAccountIDWhenServiceAccountAbsent(t *testing.T) {
+func TestFlattenApiKey_preservesServiceAccountIDWhenServiceAccountAbsent(t *testing.T) {
 	ctx := context.Background()
 	fixture := apiKeyFlattenFixture()
 	fixture.Relationships.ServiceAccount = nil
 
-	var model provider.ApiKeyResourceModelForTest
+	model := provider.ApiKeyResourceModelForTest{ServiceAccountID: types.StringValue("sa-preserved")}
 	diags := provider.FlattenApiKeyForTest(ctx, fixture, &model)
 	if diags.HasError() {
 		t.Fatalf("FlattenApiKeyForTest returned errors: %v", diags)
 	}
-	if !model.ServiceAccountID.IsNull() {
-		t.Errorf("ServiceAccountID: expected null, got %q", model.ServiceAccountID.ValueString())
+	if got := model.ServiceAccountID.ValueString(); got != "sa-preserved" {
+		t.Errorf("ServiceAccountID: want %q (preserved), got %q", "sa-preserved", got)
 	}
 }
 
-func TestFlattenApiKey_nullsServiceAccountIDWhenServiceAccountDataAbsent(t *testing.T) {
+func TestFlattenApiKey_preservesServiceAccountIDWhenServiceAccountDataAbsent(t *testing.T) {
 	ctx := context.Background()
 	fixture := apiKeyFlattenFixture()
 	fixture.Relationships.ServiceAccount = &api.ToOneAdminServiceAccountInResponse{
 		Data: nil,
 	}
 
-	var model provider.ApiKeyResourceModelForTest
+	model := provider.ApiKeyResourceModelForTest{ServiceAccountID: types.StringValue("sa-preserved")}
 	diags := provider.FlattenApiKeyForTest(ctx, fixture, &model)
 	if diags.HasError() {
 		t.Fatalf("FlattenApiKeyForTest returned errors: %v", diags)
 	}
-	if !model.ServiceAccountID.IsNull() {
-		t.Errorf("ServiceAccountID: expected null, got %q", model.ServiceAccountID.ValueString())
+	if got := model.ServiceAccountID.ValueString(); got != "sa-preserved" {
+		t.Errorf("ServiceAccountID: want %q (preserved), got %q", "sa-preserved", got)
 	}
 }
 

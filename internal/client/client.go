@@ -99,14 +99,21 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	// Determine the base transport: honour an explicitly provided HTTPClient's
-	// Transport so tests can inject a stub, then wrap it with logging.
+	// Transport so tests can inject a stub, then wrap it with logging and a
+	// retry layer for transient 5xx / network failures on idempotent methods.
+	//
+	// Transport stack (outermost to innermost):
+	//   RetryTransport  → retries idempotent requests on 5xx / 429 / network errors
+	//   LoggingTransport → records every (retried) request/response via tflog
+	//   baseTransport    → caller-supplied transport, or http.DefaultTransport
 	var baseTransport http.RoundTripper
 	if cfg.HTTPClient != nil {
 		baseTransport = cfg.HTTPClient.Transport // may be nil → DefaultTransport
 	}
 	loggingRT := NewLoggingTransport(baseTransport)
+	retryRT := NewRetryTransport(loggingRT, RetryConfig{})
 
-	httpClient := &http.Client{Transport: loggingRT}
+	httpClient := &http.Client{Transport: retryRT}
 	if cfg.HTTPClient != nil {
 		// Wrapping the caller-supplied Transport (rather than replacing the whole
 		// client) is intentional: it preserves any retry/backoff middleware the
@@ -189,6 +196,32 @@ func UnmarshalDocument[T any](r io.Reader) (T, error) {
 		return zero, fmt.Errorf("monotaur: unmarshal document: %w", err)
 	}
 	return doc.Data, nil
+}
+
+// ReadOrRefetch returns a body to unmarshal from. If resp.StatusCode is 204
+// No Content, it invokes refetch() to GET the resource fresh and returns that
+// response's body; otherwise it returns resp.Body unchanged. The caller must
+// call the returned cleanup function exactly once when done — when no
+// re-fetch was needed, cleanup is a no-op (resp.Body is closed by the caller's
+// own defer on the original response).
+//
+// JSON:API PATCH endpoints return 204 when an update produced no
+// server-computed changes; without a follow-up GET, Terraform state misses
+// fields like `update_date_time` that the server still bumped. This helper
+// centralizes that handling so every Update method handles 204 the same way.
+func ReadOrRefetch(resp *http.Response, refetch func() (*http.Response, error)) (io.Reader, func(), error) {
+	if resp.StatusCode != http.StatusNoContent {
+		return resp.Body, func() {}, nil
+	}
+	fetched, err := refetch()
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("monotaur: re-fetch after 204: %w", err)
+	}
+	if err := CheckResponse(fetched); err != nil {
+		fetched.Body.Close()
+		return nil, func() {}, err
+	}
+	return fetched.Body, func() { fetched.Body.Close() }, nil
 }
 
 // UnmarshalCollectionDocument decodes a JSON:API collection document envelope

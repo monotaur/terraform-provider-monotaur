@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -199,7 +200,13 @@ func (r *sensorResource) Read(ctx context.Context, req resource.ReadRequest, res
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_sensor: reading sensor", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().GetSensor(ctx, id, &api.GetSensorParams{})
+	// Request the probe relationship via `?include=probe` so the response
+	// populates Relationships.Probe.Data. Without this, a bare GET echoes the
+	// relationship with `links` only, leaving probe_id null after import
+	// (see flattenSensor).
+	include := "probe"
+	query := map[string]*string{"include": &include}
+	apiResp, err := r.client.Inner().GetSensor(ctx, id, &api.GetSensorParams{Query: &query})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Sensor", "Could not read sensor "+id+": "+err.Error())
 		return
@@ -284,7 +291,16 @@ func (r *sensorResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInSensorResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetSensor(ctx, id, &api.GetSensorParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Sensor After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInSensorResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Sensor Response", err.Error())
 		return
@@ -431,16 +447,13 @@ func flattenSensor(_ context.Context, data api.DataInSensorResponse, model *sens
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// probe_id — to-one
-		if rels.Probe != nil && rels.Probe.Data != nil {
-			model.ProbeID = types.StringValue(rels.Probe.Data.Id)
-		} else {
-			model.ProbeID = types.StringNull()
-		}
-	} else {
+	// probe_id — to-one. Preserve the prior model value when the API echoes
+	// only `links` (no embedded `data`); overwriting with null would cause
+	// "was X, but now null" inconsistency errors after a successful create.
+	rels := data.Relationships
+	if rels != nil && rels.Probe != nil && rels.Probe.Data != nil {
+		model.ProbeID = types.StringValue(rels.Probe.Data.Id)
+	} else if model.ProbeID.IsUnknown() {
 		model.ProbeID = types.StringNull()
 	}
 

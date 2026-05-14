@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -261,7 +262,16 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInAdminRoleResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetAdminRole(ctx, id, &api.GetAdminRoleParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Role After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInAdminRoleResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Role Response", err.Error())
 		return

@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -245,6 +247,14 @@ func (r *labelResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	defer apiResp.Body.Close()
 
 	if err := client.CheckResponse(apiResp); err != nil {
+		// 404 means the label was deleted out-of-band — remove it from state so
+		// the next plan re-creates it instead of erroring on a missing resource.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			tflog.Debug(ctx, "monotaur_label: label not found, removing from state", map[string]any{"id": id})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Error Reading Label", "API returned an error: "+err.Error())
 		return
 	}
@@ -328,7 +338,16 @@ func (r *labelResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInLabelResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetLabel(ctx, id, &api.GetLabelParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Label After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInLabelResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Label Response", err.Error())
 		return
@@ -522,47 +541,46 @@ func flattenLabel(ctx context.Context, data api.DataInLabelResponse, model *labe
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
+	// Relationships often arrive with only `links` (no embedded `data`). When
+	// `data` is absent we cannot tell the current member set, so preserve the
+	// prior model value — the plan for create/update, or the state for read —
+	// to avoid "element 0 has vanished" inconsistency errors after a
+	// successful apply.
+	rels := data.Relationships
 
-		if rels.CalendarEvents != nil && rels.CalendarEvents.Data != nil {
-			ids := make([]string, len(*rels.CalendarEvents.Data))
-			for i, item := range *rels.CalendarEvents.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.CalendarEventIDs = list
-		} else {
-			model.CalendarEventIDs = types.ListValueMust(types.StringType, nil)
+	if rels != nil && rels.CalendarEvents != nil && rels.CalendarEvents.Data != nil {
+		ids := make([]string, len(*rels.CalendarEvents.Data))
+		for i, item := range *rels.CalendarEvents.Data {
+			ids[i] = item.Id
 		}
-
-		if rels.Components != nil && rels.Components.Data != nil {
-			ids := make([]string, len(*rels.Components.Data))
-			for i, item := range *rels.Components.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.ComponentIDs = list
-		} else {
-			model.ComponentIDs = types.ListValueMust(types.StringType, nil)
-		}
-
-		if rels.Monitors != nil && rels.Monitors.Data != nil {
-			ids := make([]string, len(*rels.Monitors.Data))
-			for i, item := range *rels.Monitors.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.MonitorIDs = list
-		} else {
-			model.MonitorIDs = types.ListValueMust(types.StringType, nil)
-		}
-	} else {
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.CalendarEventIDs = list
+	} else if model.CalendarEventIDs.IsNull() || model.CalendarEventIDs.IsUnknown() {
 		model.CalendarEventIDs = types.ListValueMust(types.StringType, nil)
+	}
+
+	if rels != nil && rels.Components != nil && rels.Components.Data != nil {
+		ids := make([]string, len(*rels.Components.Data))
+		for i, item := range *rels.Components.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.ComponentIDs = list
+	} else if model.ComponentIDs.IsNull() || model.ComponentIDs.IsUnknown() {
 		model.ComponentIDs = types.ListValueMust(types.StringType, nil)
+	}
+
+	if rels != nil && rels.Monitors != nil && rels.Monitors.Data != nil {
+		ids := make([]string, len(*rels.Monitors.Data))
+		for i, item := range *rels.Monitors.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.MonitorIDs = list
+	} else if model.MonitorIDs.IsNull() || model.MonitorIDs.IsUnknown() {
 		model.MonitorIDs = types.ListValueMust(types.StringType, nil)
 	}
 

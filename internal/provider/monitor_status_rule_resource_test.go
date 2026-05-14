@@ -17,8 +17,8 @@ import (
 
 // monitorStatusRuleFlattenFixture builds a DataInMonitorStatusRuleResponse with all fields populated.
 func monitorStatusRuleFlattenFixture() api.DataInMonitorStatusRuleResponse {
-	predicate := "probe.status == 'Down'"
-	status := api.MonitorStatus("Down")
+	predicate := "probe.status == 'Fault'"
+	status := api.MonitorStatus("Fault")
 	statusMsg := "probe is down"
 	now := time.Now()
 	monitorID := "monitor-42"
@@ -66,8 +66,8 @@ func TestFlattenMonitorStatusRule_setsPredicateFromAttributes(t *testing.T) {
 	if diags.HasError() {
 		t.Fatalf("FlattenMonitorStatusRuleForTest returned errors: %v", diags)
 	}
-	if got := model.Predicate.ValueString(); got != "probe.status == 'Down'" {
-		t.Errorf("Predicate: want %q, got %q", "probe.status == 'Down'", got)
+	if got := model.Predicate.ValueString(); got != "probe.status == 'Fault'" {
+		t.Errorf("Predicate: want %q, got %q", "probe.status == 'Fault'", got)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestFlattenMonitorStatusRule_setsStatusFromAttributes(t *testing.T) {
 	if diags.HasError() {
 		t.Fatalf("FlattenMonitorStatusRuleForTest returned errors: %v", diags)
 	}
-	if got := model.Status.ValueString(); got != "Down" {
-		t.Errorf("Status: want %q, got %q", "Down", got)
+	if got := model.Status.ValueString(); got != "Fault" {
+		t.Errorf("Status: want %q, got %q", "Fault", got)
 	}
 }
 
@@ -272,7 +272,7 @@ func buildMonitorStatusRulePlanWithMonitorID(_ context.Context, monitorID string
 	}
 
 	return provider.MonitorStatusRuleResourceModelForTest{
-		Predicate: types.StringValue("probe.status == 'Down'"),
+		Predicate: types.StringValue("probe.status == 'Fault'"),
 		MonitorID: monitorIDVal,
 	}
 }

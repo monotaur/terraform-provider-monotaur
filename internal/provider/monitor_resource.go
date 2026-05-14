@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -293,7 +295,16 @@ func (r *monitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInMonitorResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetMonitor(ctx, id, &api.GetMonitorParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Monitor After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInMonitorResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Monitor Response", err.Error())
 		return
@@ -327,6 +338,13 @@ func (r *monitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 	defer apiResp.Body.Close()
 
 	if err := client.CheckResponse(apiResp); err != nil {
+		// 404 means the monitor was already deleted (e.g. cascade-deleted when a
+		// child resource was removed). Treat as a no-op so destroy stays idempotent.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			tflog.Debug(ctx, "monotaur_monitor: monitor already deleted, ignoring 404", map[string]any{"id": id})
+			return
+		}
 		resp.Diagnostics.AddError("Error Deleting Monitor", "API returned an error: "+err.Error())
 		return
 	}
@@ -449,22 +467,24 @@ func flattenMonitor(ctx context.Context, data api.DataInMonitorResponse, model *
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// component_ids — to-many
-		if rels.Components != nil && rels.Components.Data != nil {
-			ids := make([]string, len(*rels.Components.Data))
-			for i, item := range *rels.Components.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.ComponentIDs = list
-		} else {
-			model.ComponentIDs = types.ListValueMust(types.StringType, nil)
+	// component_ids — to-many. JSON:API responses from the Monotaur API often
+	// echo relationships with only `links` (no embedded `data`). Without `data`
+	// we cannot know the current member set, so we preserve the prior model
+	// value — the plan for create/update, or the state for read. If we instead
+	// overwrote with an empty list, Terraform would complain that
+	// "element 0 has vanished" after a create that successfully attached
+	// components. The trade-off: we won't detect out-of-band membership
+	// changes via the resource Read alone; the next plan will pick them up
+	// once the API includes the full data block.
+	if data.Relationships != nil && data.Relationships.Components != nil && data.Relationships.Components.Data != nil {
+		ids := make([]string, len(*data.Relationships.Components.Data))
+		for i, item := range *data.Relationships.Components.Data {
+			ids[i] = item.Id
 		}
-	} else {
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.ComponentIDs = list
+	} else if model.ComponentIDs.IsNull() || model.ComponentIDs.IsUnknown() {
 		model.ComponentIDs = types.ListValueMust(types.StringType, nil)
 	}
 

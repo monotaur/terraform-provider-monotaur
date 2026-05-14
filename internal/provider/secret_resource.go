@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -300,7 +301,16 @@ func (r *secretResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInSecretResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetSecret(ctx, id, &api.GetSecretParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Secret After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInSecretResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Secret Response", err.Error())
 		return
