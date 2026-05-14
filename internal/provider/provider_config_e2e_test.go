@@ -171,14 +171,22 @@ func TestAccMonotaurProvider_blockOverridesEnvVar(t *testing.T) {
 // Config helpers
 // ---------------------------------------------------------------------------
 
-// providerConfigOnly returns a minimal Terraform config that sets the provider
-// block without any resources. If apiKey is empty, the api_key attribute is
-// omitted entirely (not set to ""). This exercises the missing-credential path.
+// providerConfigOnly returns a Terraform config that sets the provider block
+// and references a label data source. The data source is required because
+// terraform-plugin-framework only invokes provider Configure lazily — when a
+// resource or data source actually needs the configured client. Without a
+// reference, missing-credential diagnostics never fire. If apiKey is empty,
+// the api_key attribute is omitted entirely (not set to "") so the
+// missing-credential code path is exercised.
 func providerConfigOnly(endpoint, apiKey string) string {
 	if apiKey == "" {
 		return fmt.Sprintf(`
 provider "monotaur" {
   endpoint = %q
+}
+
+data "monotaur_label" "probe" {
+  id = "00000000-0000-0000-0000-000000000000"
 }
 `, endpoint)
 	}
@@ -186,6 +194,10 @@ provider "monotaur" {
 provider "monotaur" {
   endpoint = %q
   api_key  = %q
+}
+
+data "monotaur_label" "probe" {
+  id = "00000000-0000-0000-0000-000000000000"
 }
 `, endpoint, apiKey)
 }

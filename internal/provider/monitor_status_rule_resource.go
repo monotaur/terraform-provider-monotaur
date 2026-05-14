@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -290,7 +291,16 @@ func (r *monitorStatusRuleResource) Update(ctx context.Context, req resource.Upd
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInMonitorStatusRuleResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetMonitorStatusRule(ctx, id, &api.GetMonitorStatusRuleParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Monitor Status Rule After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInMonitorStatusRuleResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Monitor Status Rule Response", err.Error())
 		return
@@ -425,16 +435,13 @@ func flattenMonitorStatusRule(_ context.Context, data api.DataInMonitorStatusRul
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// monitor_id — to-one
-		if rels.Monitor != nil && rels.Monitor.Data != nil {
-			model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
-		} else {
-			model.MonitorID = types.StringNull()
-		}
-	} else {
+	// monitor_id — to-one. Preserve the prior model value when the API echoes
+	// only `links` (no embedded `data`); overwriting with null would cause
+	// "was X, but now null" inconsistency errors after a successful create.
+	rels := data.Relationships
+	if rels != nil && rels.Monitor != nil && rels.Monitor.Data != nil {
+		model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
+	} else if model.MonitorID.IsUnknown() {
 		model.MonitorID = types.StringNull()
 	}
 

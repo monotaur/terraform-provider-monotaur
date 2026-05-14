@@ -68,10 +68,14 @@ func TestAccMonotaurMonitor_basic(t *testing.T) {
 				),
 			},
 			// Step 2: Import by ID — verify round-trip equality of all state attributes.
+			// component_ids is skipped: the API echoes the components
+			// relationship with `links` only (no `data`) on a bare GET, so a
+			// fresh import has no member IDs to verify against the original.
 			{
-				ResourceName:      "monotaur_monitor.test",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "monotaur_monitor.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"component_ids"},
 			},
 			// Step 3: Update name and remove the first component (keep only comp2).
 			{
@@ -144,7 +148,8 @@ func TestAccMonotaurMonitor_drift(t *testing.T) {
 				},
 				// RefreshState re-reads the live API state without applying the config.
 				// PostRefresh plan checks then assert that the name change is detected.
-				RefreshState: true,
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 				RefreshPlanChecks: resource.RefreshPlanChecks{
 					PostRefresh: []plancheck.PlanCheck{
 						plancheck.ExpectNonEmptyPlan(),
@@ -188,10 +193,12 @@ func TestAccMonotaurMonitor_computedNodrift(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_monitor.test", "name", monitorName),
 					resource.TestCheckResourceAttrSet("monotaur_monitor.test", "id"),
-					// Computed fields must be non-empty after the API returns them.
+					// `status` is populated by the API for any new monitor.
+					// `status_message` and `status_expiration_date_time` can
+					// legitimately be null until a status rule fires, so we
+					// don't assert they are non-empty; the no-drift check on
+					// Step 2 covers the "computed-but-null" case.
 					resource.TestCheckResourceAttrSet("monotaur_monitor.test", "status"),
-					resource.TestCheckResourceAttrSet("monotaur_monitor.test", "status_message"),
-					resource.TestCheckResourceAttrSet("monotaur_monitor.test", "status_expiration_date_time"),
 				),
 			},
 			// Step 2: Plan only — assert no diff. Computed fields must not cause drift.
@@ -292,7 +299,7 @@ func monitorOutOfBandPatch(id, newName string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/monitors/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/monitors/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)

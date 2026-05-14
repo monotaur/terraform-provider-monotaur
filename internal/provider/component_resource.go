@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -287,7 +288,16 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInComponentResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetComponent(ctx, id, &api.GetComponentParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Component After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInComponentResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Component Response", err.Error())
 		return
@@ -491,58 +501,58 @@ func flattenComponent(ctx context.Context, data api.DataInComponentResponse, mod
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
+	// JSON:API responses from the Monotaur API often echo relationships with only
+	// `links` (no embedded `data`). When `data` is absent we cannot tell what the
+	// current member/target is, so we preserve the prior model value — the plan
+	// for create/update, or the state for read. Overwriting with an empty list
+	// or null causes "element 0 has vanished" / "was X, but now null"
+	// inconsistency errors after a successful apply.
 
-		// business_hours_id — to-one (nullable)
-		if rels.BusinessHours != nil && rels.BusinessHours.Data != nil {
-			model.BusinessHoursID = types.StringValue(rels.BusinessHours.Data.Id)
-		} else {
-			model.BusinessHoursID = types.StringNull()
-		}
+	rels := data.Relationships
 
-		// label_ids — to-many
-		if rels.Labels != nil && rels.Labels.Data != nil {
-			ids := make([]string, len(*rels.Labels.Data))
-			for i, item := range *rels.Labels.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.LabelIDs = list
-		} else {
-			model.LabelIDs = types.ListValueMust(types.StringType, nil)
-		}
-
-		// maintenance_window_ids — to-many
-		if rels.MaintenanceWindows != nil && rels.MaintenanceWindows.Data != nil {
-			ids := make([]string, len(*rels.MaintenanceWindows.Data))
-			for i, item := range *rels.MaintenanceWindows.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.MaintenanceWindowIDs = list
-		} else {
-			model.MaintenanceWindowIDs = types.ListValueMust(types.StringType, nil)
-		}
-
-		// monitor_ids — to-many
-		if rels.Monitors != nil && rels.Monitors.Data != nil {
-			ids := make([]string, len(*rels.Monitors.Data))
-			for i, item := range *rels.Monitors.Data {
-				ids[i] = item.Id
-			}
-			list, d := types.ListValueFrom(ctx, types.StringType, ids)
-			diags.Append(d...)
-			model.MonitorIDs = list
-		} else {
-			model.MonitorIDs = types.ListValueMust(types.StringType, nil)
-		}
-	} else {
+	// business_hours_id — to-one (nullable)
+	if rels != nil && rels.BusinessHours != nil && rels.BusinessHours.Data != nil {
+		model.BusinessHoursID = types.StringValue(rels.BusinessHours.Data.Id)
+	} else if model.BusinessHoursID.IsUnknown() {
 		model.BusinessHoursID = types.StringNull()
+	}
+
+	// label_ids — to-many
+	if rels != nil && rels.Labels != nil && rels.Labels.Data != nil {
+		ids := make([]string, len(*rels.Labels.Data))
+		for i, item := range *rels.Labels.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.LabelIDs = list
+	} else if model.LabelIDs.IsNull() || model.LabelIDs.IsUnknown() {
 		model.LabelIDs = types.ListValueMust(types.StringType, nil)
+	}
+
+	// maintenance_window_ids — to-many
+	if rels != nil && rels.MaintenanceWindows != nil && rels.MaintenanceWindows.Data != nil {
+		ids := make([]string, len(*rels.MaintenanceWindows.Data))
+		for i, item := range *rels.MaintenanceWindows.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.MaintenanceWindowIDs = list
+	} else if model.MaintenanceWindowIDs.IsNull() || model.MaintenanceWindowIDs.IsUnknown() {
 		model.MaintenanceWindowIDs = types.ListValueMust(types.StringType, nil)
+	}
+
+	// monitor_ids — to-many
+	if rels != nil && rels.Monitors != nil && rels.Monitors.Data != nil {
+		ids := make([]string, len(*rels.Monitors.Data))
+		for i, item := range *rels.Monitors.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.MonitorIDs = list
+	} else if model.MonitorIDs.IsNull() || model.MonitorIDs.IsUnknown() {
 		model.MonitorIDs = types.ListValueMust(types.StringType, nil)
 	}
 

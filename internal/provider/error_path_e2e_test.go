@@ -16,12 +16,15 @@ package provider_test
 // All resource names use acctest.Name() for collision-safe, sweepable identifiers.
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,7 +51,7 @@ func TestAccMonotaurErrorPath_notFoundRecreation(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "err-404")
+	labelName := acctest.LabelText("err-404")
 	cfg := testAccErrorPathLabelConfig(labelName)
 
 	// capturedID is set by the Check in step 1 and used in the PreConfig of step 3.
@@ -95,13 +98,17 @@ func TestAccMonotaurErrorPath_notFoundRecreation(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the recreation hasn't been
+				// applied yet (Step 3 does that).
+				ExpectNonEmptyPlan: true,
 			},
 			// Step 3: Apply the original config — Terraform must re-create the label.
 			{
 				Config: cfg,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_label.test", "id"),
-					resource.TestCheckResourceAttr("monotaur_label.test", "name", labelName),
+					resource.TestCheckResourceAttr("monotaur_label.test", "text", labelName),
 				),
 			},
 		},
@@ -131,7 +138,7 @@ func TestAccMonotaurErrorPath_invalidInput(t *testing.T) {
 				// Submitting a non-hex color value. The Terraform schema accepts any
 				// string for color; the API is expected to reject it with a 422.
 				Config: testAccErrorPathLabelInvalidColorConfig(
-					acctest.Name("label", "err-422"),
+					acctest.LabelText("err-422"),
 					"not-a-valid-hex-color",
 				),
 				// The provider must surface the API error — not a raw HTTP dump —
@@ -144,46 +151,144 @@ func TestAccMonotaurErrorPath_invalidInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestAccMonotaurErrorPath_retryOnTransientFailure (not implemented)
+// TestAccMonotaurErrorPath_retryOnTransientFailure
 //
-// The 5xx retry acceptance criterion requires either:
-//   a) A transient-failure HTTP middleware wrapping the generated API client, or
-//   b) A staging-side fault injection endpoint.
+// Verifies that the provider's HTTP transport retries transient failures (5xx
+// on idempotent methods) automatically, so a flaky upstream surface as a
+// transparent success rather than a Terraform diagnostic.
 //
-// The generated oapi-codegen client does not currently include retry logic;
-// adding it would require wrapping the http.Client with a retry transport (e.g.
-// hashicorp/go-retryablehttp). Until that middleware exists, this test is left
-// as a skeleton so the acceptance criteria are clearly documented.
+// The test spins up a local httptest.Server that serves a minimal subset of
+// the Monotaur API and is programmed to return 503 a fixed number of times on
+// the first GET /api/v1/labels/{id} before serving 200. The provider is
+// pointed at that server via t.Setenv("MONOTAUR_ENDPOINT", ...).
+//
+// Steps:
+//  1. Apply a config that creates a label. The stub serves POST immediately —
+//     POSTs are intentionally not retried by the transport because the API
+//     has no idempotency-key support.
+//  2. RefreshState — explicitly triggers Read, which issues GET
+//     /api/v1/labels/1. The stub returns 503 twice, then 200. The retry
+//     transport must absorb the 5xxs so the refresh succeeds with no
+//     diagnostic, and the stub's request counter must show 3+ attempts.
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurErrorPath_retryOnTransientFailure(t *testing.T) {
-	t.Skip("5xx retry test requires retry middleware in the API client — not yet implemented")
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+
+	const labelID = "1"
+	const transient5xxCount = 2 // 503s served before the GET finally succeeds
+
+	var getAttempts atomic.Int32
+	labelBody := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "labels",
+			"id":   labelID,
+			"attributes": map[string]interface{}{
+				"openapi:discriminator": "labels",
+				"text":                  "retry-test-label",
+				// Must match the value in testAccErrorPathLabelConfig so the
+				// framework's post-apply consistency check passes.
+				"color": "#FF5733",
+			},
+		},
+	}
+	labelBodyBytes, err := json.Marshal(labelBody)
+	if err != nil {
+		t.Fatalf("marshal label body: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/labels", func(w http.ResponseWriter, r *http.Request) {
+		// Create endpoint — POSTs are NOT retried by design, so we always
+		// respond successfully on the first call.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json; ext=openapi")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(labelBodyBytes)
+	})
+	mux.HandleFunc("/api/v1/labels/"+labelID, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			attempt := getAttempts.Add(1)
+			if attempt <= transient5xxCount {
+				// Mimic the API's JSON:API error body so that, if the retry
+				// transport ever stops working, the failure surfaces with a
+				// realistic-looking diagnostic instead of a parse error.
+				w.Header().Set("Content-Type", "application/vnd.api+json; ext=openapi")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = io.WriteString(w, `{"errors":[{"status":"503","title":"transient","detail":"injected fault"}]}`)
+				return
+			}
+			w.Header().Set("Content-Type", "application/vnd.api+json; ext=openapi")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(labelBodyBytes)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	// Point the provider at the local stub. testAccPreCheck only checks that
+	// the env vars are non-empty, so any value works for the API key.
+	t.Setenv("MONOTAUR_ENDPOINT", srv.URL)
+	t.Setenv("MONOTAUR_API_KEY", "stub-key")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: Apply — POST creates the label. Not retried.
+			{
+				Config: testAccErrorPathLabelConfig("retry-test-label"),
+				Check: resource.TestCheckResourceAttr("monotaur_label.test", "id", labelID),
+			},
+			// Step 2: Refresh — triggers GET. The stub returns 503 twice, then
+			// 200; the retry transport must absorb the 5xxs so this step
+			// succeeds with no diagnostic. The check asserts the stub saw the
+			// expected number of attempts, proving retry actually fired.
+			{
+				RefreshState: true,
+				Check: func(_ *terraform.State) error {
+					if got := getAttempts.Load(); got < int32(transient5xxCount+1) {
+						return fmt.Errorf("expected GET to be retried at least %d times, got %d attempts",
+							transient5xxCount+1, got)
+					}
+					return nil
+				},
+			},
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------
 // Config helpers
 // ---------------------------------------------------------------------------
 
-func testAccErrorPathLabelConfig(name string) string {
+func testAccErrorPathLabelConfig(text string) string {
 	return fmt.Sprintf(`
 resource "monotaur_label" "test" {
-  name  = %q
+  text  = %q
   color = "#FF5733"
-  icon  = "tag"
-  text  = "Error path test label"
 }
-`, name)
+`, text)
 }
 
-func testAccErrorPathLabelInvalidColorConfig(name, color string) string {
+func testAccErrorPathLabelInvalidColorConfig(text, color string) string {
 	return fmt.Sprintf(`
 resource "monotaur_label" "test" {
-  name  = %q
+  text  = %q
   color = %q
-  icon  = "tag"
-  text  = "Invalid color test"
 }
-`, name, color)
+`, text, color)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +304,7 @@ func labelOutOfBandDelete(id string) error {
 		return fmt.Errorf("MONOTAUR_ENDPOINT and MONOTAUR_API_KEY must be set")
 	}
 
-	url := fmt.Sprintf("%s/labels/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/labels/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("create DELETE request: %w", err)
@@ -217,7 +322,7 @@ func labelOutOfBandDelete(id string) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE /labels/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
+		return fmt.Errorf("DELETE /api/v1/labels/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
 	}
 	return nil
 }

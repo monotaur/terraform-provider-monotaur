@@ -44,8 +44,8 @@ func TestAccMonotaurLabel_basic(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	name := acctest.Name("label", "basic")
-	updatedName := acctest.Name("label", "basic-upd")
+	name := acctest.LabelText("basic")
+	updatedName := acctest.LabelText("basic-upd")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -59,7 +59,9 @@ func TestAccMonotaurLabel_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("monotaur_label.test", "color", "#FF0000"),
 					resource.TestCheckResourceAttrSet("monotaur_label.test", "id"),
 					resource.TestCheckResourceAttrSet("monotaur_label.test", "name"),
-					resource.TestCheckResourceAttrSet("monotaur_label.test", "value"),
+					// `value` is computed by the API and is null on a freshly-created
+					// label until something assigns one, so we don't assert it's set
+					// here.
 					resource.TestCheckResourceAttrSet("monotaur_label.test", "create_date_time"),
 					resource.TestCheckResourceAttrSet("monotaur_label.test", "update_date_time"),
 				),
@@ -99,7 +101,7 @@ func TestAccMonotaurLabel_drift(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	name := acctest.Name("label", "drift")
+	name := acctest.LabelText("drift")
 
 	// capturedID is populated by the Check function in step 1 and consumed in
 	// the PreConfig of step 2. Using a pointer-to-string avoids a data race
@@ -150,6 +152,9 @@ func TestAccMonotaurLabel_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -219,7 +224,7 @@ func labelOutOfBandPatch(id, newColor string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/labels/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/labels/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -236,7 +241,7 @@ func labelOutOfBandPatch(id, newColor string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /labels/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/labels/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

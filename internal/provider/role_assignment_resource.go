@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -188,6 +190,14 @@ func (r *roleAssignmentResource) Read(ctx context.Context, req resource.ReadRequ
 	defer apiResp.Body.Close()
 
 	if err := client.CheckResponse(apiResp); err != nil {
+		// 404 means the role assignment was deleted out-of-band — remove it
+		// from state so the next plan re-creates it instead of erroring.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			tflog.Debug(ctx, "monotaur_role_assignment: not found, removing from state", map[string]any{"id": id})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Error Reading Role Assignment", "API returned an error: "+err.Error())
 		return
 	}
@@ -269,19 +279,20 @@ func flattenRoleAssignment(data api.DataInAdminRoleAssignmentResponse, model *ro
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-		if rels.Role != nil && rels.Role.Data != nil {
-			model.RoleID = types.StringValue(rels.Role.Data.Id)
-		} else {
-			model.RoleID = types.StringNull()
-		}
+	// Preserve the prior model values for relationships when the API echoes only
+	// `links` (no embedded `data`). Overwriting with null would cause
+	// "was X, but now null" inconsistency errors after a successful create.
+	rels := data.Relationships
+	if rels != nil && rels.Role != nil && rels.Role.Data != nil {
+		model.RoleID = types.StringValue(rels.Role.Data.Id)
+	} else if model.RoleID.IsUnknown() {
+		model.RoleID = types.StringNull()
+	}
 
-		if rels.ServiceAccount != nil && rels.ServiceAccount.Data != nil {
-			model.ServiceAccountID = types.StringValue(rels.ServiceAccount.Data.Id)
-		} else {
-			model.ServiceAccountID = types.StringNull()
-		}
+	if rels != nil && rels.ServiceAccount != nil && rels.ServiceAccount.Data != nil {
+		model.ServiceAccountID = types.StringValue(rels.ServiceAccount.Data.Id)
+	} else if model.ServiceAccountID.IsUnknown() {
+		model.ServiceAccountID = types.StringNull()
 	}
 
 	return diags

@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -207,6 +209,7 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 			Type:       api.ResourceTypeAdminApiKeys,
 			Attributes: attrs,
 			Relationships: &api.RelationshipsInCreateAdminApiKeyRequest{
+				OpenapiDiscriminator: api.ResourceTypeAdminApiKeys,
 				ServiceAccount: api.ToOneAdminServiceAccountInRequest{
 					Data: api.AdminServiceAccountIdentifierInRequest{
 						Id:   plan.ServiceAccountID.ValueString(),
@@ -268,7 +271,13 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_api_key: reading API key", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().GetAdminApiKey(ctx, id, &api.GetAdminApiKeyParams{})
+	// Request the serviceAccount relationship via `?include=serviceAccount` so
+	// the response populates Relationships.ServiceAccount.Data. Without this, a
+	// bare GET echoes the relationship with `links` only, leaving
+	// service_account_id null after import (see flattenApiKey).
+	include := "serviceAccount"
+	query := map[string]*string{"include": &include}
+	apiResp, err := r.client.Inner().GetAdminApiKey(ctx, id, &api.GetAdminApiKeyParams{Query: &query})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading API Key", "Could not read API key "+id+": "+err.Error())
 		return
@@ -276,6 +285,14 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 	defer apiResp.Body.Close()
 
 	if err := client.CheckResponse(apiResp); err != nil {
+		// 404 means the key was deleted out-of-band — remove it from state so
+		// the next plan re-creates it instead of erroring on a missing resource.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			tflog.Debug(ctx, "monotaur_api_key: API key not found, removing from state", map[string]any{"id": id})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Error Reading API Key", "API returned an error: "+err.Error())
 		return
 	}
@@ -447,17 +464,15 @@ func flattenApiKey(_ context.Context, data api.DataInAdminApiKeyResponse, model 
 		// without triggering spurious drift detection.
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// service_account_id — to-one
-		if rels.ServiceAccount != nil && rels.ServiceAccount.Data != nil {
-			model.ServiceAccountID = types.StringValue(rels.ServiceAccount.Data.Id)
-		} else {
-			model.ServiceAccountID = types.StringNull()
-		}
-	} else {
-		model.ServiceAccountID = types.StringNull()
+	// service_account_id — to-one. JSON:API responses omit relationship `data`
+	// unless explicitly included, so only overwrite when the server returns it;
+	// otherwise preserve the value the caller passed in via `model` (plan on
+	// create, prior state on read). The attribute is Required + RequiresReplace,
+	// so the model is guaranteed to already hold the correct value.
+	if data.Relationships != nil &&
+		data.Relationships.ServiceAccount != nil &&
+		data.Relationships.ServiceAccount.Data != nil {
+		model.ServiceAccountID = types.StringValue(data.Relationships.ServiceAccount.Data.Id)
 	}
 
 	return diags

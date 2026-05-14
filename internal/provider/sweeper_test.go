@@ -27,7 +27,11 @@ import (
 )
 
 // sweepPrefix is the resource-name prefix that identifies test resources.
-const sweepPrefix = "tfe2e-"
+// Both "tfe2e-" (for resources whose names accept hyphens, the default) and
+// "tfe2e_" (for label-text-style identifiers that must match
+// ^[a-zA-Z_][a-zA-Z0-9_]*) share the leading "tfe2e" so a single prefix
+// match covers both naming variants.
+const sweepPrefix = "tfe2e"
 
 // sweepClient wraps the raw HTTP client used by sweepers so they can share
 // authentication / base-URL logic without pulling in the full provider stack.
@@ -49,7 +53,7 @@ func newSweepClient() (*sweepClient, error) {
 		return nil, fmt.Errorf("MONOTAUR_API_KEY must be set to run sweepers")
 	}
 	return &sweepClient{
-		baseURL: strings.TrimRight(endpoint, "/"),
+		baseURL: strings.TrimRight(endpoint, "/") + "/api/v1",
 		apiKey:  apiKey,
 		http:    &http.Client{},
 	}, nil
@@ -149,8 +153,8 @@ type genericRelationships struct {
 }
 
 type genericResource struct {
-	ID            string               `json:"id"`
-	Attributes    *genericAttributes   `json:"attributes,omitempty"`
+	ID            string                `json:"id"`
+	Attributes    *genericAttributes    `json:"attributes,omitempty"`
 	Relationships *genericRelationships `json:"relationships,omitempty"`
 }
 
@@ -300,35 +304,6 @@ func sweepProbes(ctx context.Context, c *sweepClient, monitorIDs map[string]stru
 	return deleted, nil
 }
 
-// sweepMonitorStatusRules deletes monitor_status_rules whose parent monitor is in monitorIDs.
-func sweepMonitorStatusRules(ctx context.Context, c *sweepClient, monitorIDs map[string]struct{}) (int, error) {
-	var doc collectionDoc
-	if err := c.get(ctx, "/monitor-status-rules", &doc); err != nil {
-		return 0, fmt.Errorf("listing monitor_status_rules: %w", err)
-	}
-
-	var deleted int
-	for _, res := range doc.Data {
-		if res.Relationships == nil || res.Relationships.Monitor == nil ||
-			res.Relationships.Monitor.Data == nil {
-			continue
-		}
-		parentMonitorID := res.Relationships.Monitor.Data.ID
-		if _, ok := monitorIDs[parentMonitorID]; !ok {
-			continue
-		}
-		if err := c.delete(ctx, "/monitor-status-rules/"+res.ID); err != nil {
-			log.Printf("[WARN] sweeper: failed to delete monitor_status_rule id=%s (monitor=%s): %v",
-				res.ID, parentMonitorID, err)
-			continue
-		}
-		log.Printf("[INFO] sweeper: deleted monitor_status_rule id=%s (monitor=%s)",
-			res.ID, parentMonitorID)
-		deleted++
-	}
-	return deleted, nil
-}
-
 // sweepAlarms deletes alarms whose parent monitor is in monitorIDs.
 func sweepAlarms(ctx context.Context, c *sweepClient, monitorIDs map[string]struct{}) (int, error) {
 	var doc collectionDoc
@@ -414,7 +389,7 @@ func sweepSecrets(ctx context.Context, c *sweepClient) (int, error) {
 // sweepers can cross-reference them.
 func sweepServiceAccounts(ctx context.Context, c *sweepClient) (int, map[string]struct{}, error) {
 	var doc collectionDoc
-	if err := c.get(ctx, "/admin/service-accounts", &doc); err != nil {
+	if err := c.get(ctx, "/admin.serviceAccounts", &doc); err != nil {
 		return 0, nil, fmt.Errorf("listing service_accounts: %w", err)
 	}
 
@@ -441,10 +416,10 @@ func sweepServiceAccounts(ctx context.Context, c *sweepClient) (int, map[string]
 	return deleted, matchIDs, nil
 }
 
-// sweepRoles deletes roles whose name starts with sweepPrefix.
+// sweepRoles deletes roles whose name starts with sweepPrefix. The API endpoint uses dot notation.
 func sweepRoles(ctx context.Context, c *sweepClient) (int, error) {
 	var doc collectionDoc
-	if err := c.get(ctx, "/admin/roles", &doc); err != nil {
+	if err := c.get(ctx, "/admin.roles", &doc); err != nil {
 		return 0, fmt.Errorf("listing roles: %w", err)
 	}
 
@@ -457,7 +432,7 @@ func sweepRoles(ctx context.Context, c *sweepClient) (int, error) {
 		if !strings.HasPrefix(name, sweepPrefix) {
 			continue
 		}
-		if err := c.delete(ctx, "/admin/roles/"+res.ID); err != nil {
+		if err := c.delete(ctx, "/admin.roles/"+res.ID); err != nil {
 			log.Printf("[WARN] sweeper: failed to delete role %s (%s): %v", name, res.ID, err)
 			continue
 		}
@@ -469,10 +444,10 @@ func sweepRoles(ctx context.Context, c *sweepClient) (int, error) {
 
 // sweepRoleAssignments deletes role assignments whose role or service account
 // ID is in the provided sets. Role assignments have no name; they are
-// identified through their relationships.
+// identified through their relationships. The API endpoint uses dot notation.
 func sweepRoleAssignments(ctx context.Context, c *sweepClient, serviceAccountIDs map[string]struct{}) (int, error) {
 	var doc collectionDoc
-	if err := c.get(ctx, "/admin/role-assignments", &doc); err != nil {
+	if err := c.get(ctx, "/admin.roleAssignments", &doc); err != nil { // No change needed here, already corrected
 		return 0, fmt.Errorf("listing role_assignments: %w", err)
 	}
 
@@ -491,7 +466,7 @@ func sweepRoleAssignments(ctx context.Context, c *sweepClient, serviceAccountIDs
 		if !match {
 			continue
 		}
-		if err := c.delete(ctx, "/admin/role-assignments/"+res.ID); err != nil {
+		if err := c.delete(ctx, "/admin.roleAssignments/"+res.ID); err != nil {
 			log.Printf("[WARN] sweeper: failed to delete role_assignment id=%s: %v", res.ID, err)
 			continue
 		}
@@ -502,11 +477,11 @@ func sweepRoleAssignments(ctx context.Context, c *sweepClient, serviceAccountIDs
 }
 
 // sweepAPIKeys deletes API keys whose name starts with sweepPrefix. Because the
-// API does not expose DELETE /admin/api-keys/{id}, each key is deleted via its
+// API does not expose DELETE /admin.apiKeys/{id}, each key is deleted via its
 // owning service account's relationship endpoint.
 func sweepAPIKeys(ctx context.Context, c *sweepClient) (int, error) {
 	var doc collectionDoc
-	if err := c.get(ctx, "/admin/api-keys", &doc); err != nil {
+	if err := c.get(ctx, "/admin.apiKeys", &doc); err != nil {
 		return 0, fmt.Errorf("listing api_keys: %w", err)
 	}
 
@@ -541,7 +516,7 @@ func sweepAPIKeys(ctx context.Context, c *sweepClient) (int, error) {
 			continue
 		}
 
-		path := fmt.Sprintf("/admin/service-accounts/%s/relationships/api-keys", saID)
+		path := fmt.Sprintf("/admin.serviceAccounts/%s/relationships/admin.apiKeys", saID)
 		if err := c.deleteWithBody(ctx, path, body); err != nil {
 			log.Printf("[WARN] sweeper: failed to delete api_key %s (%s): %v", name, res.ID, err)
 			continue
@@ -585,7 +560,7 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 	//    Collect service account IDs that match tfe2e- for cross-reference.
 	var saDoc collectionDoc
 	var saMatchIDs map[string]struct{}
-	if listErr := c.get(ctx, "/admin/service-accounts", &saDoc); listErr == nil {
+	if listErr := c.get(ctx, "/admin.serviceAccounts", &saDoc); listErr == nil {
 		saMatchIDs = make(map[string]struct{})
 		for _, res := range saDoc.Data {
 			name := ""
@@ -597,7 +572,7 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 			}
 		}
 	} else {
-		log.Printf("[WARN] sweeper: could not list service_accounts for role_assignment cross-ref: %v", listErr)
+		log.Printf("[WARN] sweeper: could not list serviceAccounts for role_assignment cross-ref: %v", listErr)
 		saMatchIDs = make(map[string]struct{})
 	}
 	n, err = sweepRoleAssignments(ctx, c, saMatchIDs)
@@ -630,39 +605,35 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 		monMatchIDs = make(map[string]struct{})
 	}
 
-	// 6. Monitor status rules (depend on monitors).
-	n, err = sweepMonitorStatusRules(ctx, c, monMatchIDs)
-	logStep("monitor_status_rule", n, err)
-
-	// 7. Alarms (depend on monitors).
+	// 6. Alarms (depend on monitors).
 	n, err = sweepAlarms(ctx, c, monMatchIDs)
 	logStep("alarm", n, err)
 
-	// 8. Variables.
+	// 7. Variables.
 	n, err = sweepVariables(ctx, c)
 	logStep("variable", n, err)
 
-	// 9. Secrets.
+	// 8. Secrets.
 	n, err = sweepSecrets(ctx, c)
 	logStep("secret", n, err)
 
-	// 10. Probes (depend on monitors).
+	// 9. Probes (depend on monitors).
 	n, err = sweepProbes(ctx, c, monMatchIDs)
 	logStep("probe", n, err)
 
-	// 11. Sensors.
+	// 10. Sensors.
 	n, err = sweepSensors(ctx, c)
 	logStep("sensor", n, err)
 
-	// 12. Monitors.
+	// 11. Monitors.
 	n, _, err = sweepMonitors(ctx, c)
 	logStep("monitor", n, err)
 
-	// 13. Components.
+	// 12. Components.
 	n, err = sweepComponents(ctx, c)
 	logStep("component", n, err)
 
-	// 14. Labels (shallowest).
+	// 13. Labels (shallowest).
 	n, err = sweepLabels(ctx, c)
 	logStep("label", n, err)
 

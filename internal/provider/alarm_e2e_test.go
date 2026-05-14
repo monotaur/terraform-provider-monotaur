@@ -45,7 +45,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_basic(t *testing.T) {
-	labelName := acctest.Name("label", "alarm-basic")
+	labelName := acctest.LabelText("alarm-basic")
 	componentName := acctest.Name("component", "alarm-basic")
 	monitorName := acctest.Name("monitor", "alarm-basic")
 
@@ -107,7 +107,7 @@ func TestAccMonotaurAlarm_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_drift(t *testing.T) {
-	labelName := acctest.Name("label", "alarm-drift")
+	labelName := acctest.LabelText("alarm-drift")
 	componentName := acctest.Name("component", "alarm-drift")
 	monitorName := acctest.Name("monitor", "alarm-drift")
 
@@ -154,7 +154,11 @@ func TestAccMonotaurAlarm_drift(t *testing.T) {
 				},
 				// RefreshState re-reads the live API state into Terraform state without
 				// applying the config. PostRefresh plan checks then assert drift.
-				RefreshState: true,
+				// ExpectNonEmptyPlan suppresses the framework's implicit
+				// "post-refresh plan must be empty" check; the plancheck asserts
+				// non-emptiness explicitly.
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 				RefreshPlanChecks: resource.RefreshPlanChecks{
 					PostRefresh: []plancheck.PlanCheck{
 						plancheck.ExpectNonEmptyPlan(),
@@ -182,7 +186,7 @@ func TestAccMonotaurAlarm_drift(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurAlarm_monitorChange(t *testing.T) {
-	labelName := acctest.Name("label", "alarm-monchg")
+	labelName := acctest.LabelText("alarm-monchg")
 	componentName := acctest.Name("component", "alarm-monchg")
 	monitor1Name := acctest.Name("monitor", "alarm-monchg-1")
 	monitor2Name := acctest.Name("monitor", "alarm-monchg-2")
@@ -330,7 +334,7 @@ func alarmOutOfBandPatchSquelch(id string, squelch bool) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/alarms/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/alarms/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -348,7 +352,7 @@ func alarmOutOfBandPatchSquelch(id string, squelch bool) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /alarms/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/alarms/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

@@ -65,11 +65,11 @@ func TestAccMonotaurApiKey_basic(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Step 1: Create. Verify all readable attributes are populated.
 			{
-				Config: testAccApiKeyConfig(keyName, "staging", saID),
+				Config: testAccApiKeyConfig(keyName, "test", saID),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_api_key.test", "id"),
 					resource.TestCheckResourceAttr("monotaur_api_key.test", "name", keyName),
-					resource.TestCheckResourceAttr("monotaur_api_key.test", "environment", "staging"),
+					resource.TestCheckResourceAttr("monotaur_api_key.test", "environment", "test"),
 					resource.TestCheckResourceAttr("monotaur_api_key.test", "service_account_id", saID),
 					resource.TestCheckResourceAttrSet("monotaur_api_key.test", "key_value"),
 					resource.TestCheckResourceAttrSet("monotaur_api_key.test", "prefix"),
@@ -88,7 +88,7 @@ func TestAccMonotaurApiKey_basic(t *testing.T) {
 			// Step 3: Change the name. name is RequiresReplace — Terraform must plan
 			// a DestroyBeforeCreate for the key.
 			{
-				Config: testAccApiKeyConfig(keyNameV2, "staging", saID),
+				Config: testAccApiKeyConfig(keyNameV2, "test", saID),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectResourceAction(
@@ -127,7 +127,7 @@ func TestAccMonotaurApiKey_nodrift(t *testing.T) {
 	defer saCleanup()
 
 	keyName := acctest.Name("apikey", "ak-nodrift")
-	cfg := testAccApiKeyConfig(keyName, "staging", saID)
+	cfg := testAccApiKeyConfig(keyName, "test", saID)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -193,7 +193,7 @@ func TestAccMonotaurApiKey_drift(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Step 1: Create the key and capture its API-assigned ID.
 			{
-				Config: testAccApiKeyConfig(keyName, "staging", saID),
+				Config: testAccApiKeyConfig(keyName, "test", saID),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_api_key.test", "id"),
 					func(s *terraform.State) error {
@@ -220,7 +220,8 @@ func TestAccMonotaurApiKey_drift(t *testing.T) {
 						t.Fatalf("drift test: out-of-band DELETE failed: %v", err)
 					}
 				},
-				RefreshState: true,
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 				RefreshPlanChecks: resource.RefreshPlanChecks{
 					PostRefresh: []plancheck.PlanCheck{
 						plancheck.ExpectNonEmptyPlan(),
@@ -255,7 +256,7 @@ resource "monotaur_api_key" "test" {
 // endpoint, simulating an operator deletion outside Terraform. The provider
 // uses the same endpoint in its Delete method.
 //
-// Endpoint: DELETE /admin/service-accounts/{saID}/relationships/api-keys
+// Endpoint: DELETE /api/v1/admin.serviceAccounts/{saID}/relationships/apiKeys
 // Body: JSON:API to-many relationship document identifying the key to remove.
 func apiKeyOutOfBandDelete(saID, keyID string) error {
 	endpoint := strings.TrimRight(os.Getenv("MONOTAUR_ENDPOINT"), "/")
@@ -278,7 +279,7 @@ func apiKeyOutOfBandDelete(saID, keyID string) error {
 	}
 
 	const ct = "application/vnd.api+json; ext=openapi"
-	url := fmt.Sprintf("%s/admin/service-accounts/%s/relationships/api-keys", endpoint, saID)
+	url := fmt.Sprintf("%s/api/v1/admin.serviceAccounts/%s/relationships/apiKeys", endpoint, saID)
 	req, err := http.NewRequest(http.MethodDelete, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create DELETE request: %w", err)

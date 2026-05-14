@@ -47,7 +47,7 @@ func TestAccMonotaurSensor_basic(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sensor-basic")
+	labelName := acctest.LabelText("sensor-basic")
 	componentName := acctest.Name("component", "sensor-basic")
 	monitorName := acctest.Name("monitor", "sensor-basic")
 	sensorName := acctest.Name("sensor", "1")
@@ -112,7 +112,7 @@ func TestAccMonotaurSensor_drift(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sensor-drift")
+	labelName := acctest.LabelText("sensor-drift")
 	componentName := acctest.Name("component", "sensor-drift")
 	monitorName := acctest.Name("monitor", "sensor-drift")
 	sensorName := acctest.Name("sensor", "drift")
@@ -166,6 +166,9 @@ func TestAccMonotaurSensor_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -192,7 +195,7 @@ func TestAccMonotaurSensor_probeChange(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sensor-probechg")
+	labelName := acctest.LabelText("sensor-probechg")
 	componentName := acctest.Name("component", "sensor-probechg")
 	monitorName := acctest.Name("monitor", "sensor-probechg")
 	sensorName := acctest.Name("sensor", "probechg")
@@ -347,7 +350,7 @@ func sensorOutOfBandPatch(id, newName string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/sensors/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/sensors/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -365,7 +368,7 @@ func sensorOutOfBandPatch(id, newName string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /sensors/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/sensors/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

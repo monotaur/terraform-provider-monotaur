@@ -143,6 +143,9 @@ func TestAccMonotaurRole_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -247,7 +250,7 @@ func roleOutOfBandPatchName(id, newName string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/admin/roles/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/admin.roles/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -265,7 +268,7 @@ func roleOutOfBandPatchName(id, newName string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /admin/roles/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/admin.roles/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

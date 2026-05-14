@@ -152,6 +152,9 @@ func TestAccMonotaurVariable_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -178,7 +181,7 @@ func TestAccMonotaurVariable_monitorChange(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "var-mc")
+	labelName := acctest.LabelText("var-mc")
 	componentName := acctest.Name("component", "var-mc")
 	monitorName1 := acctest.Name("monitor", "var-mc-1")
 	monitorName2 := acctest.Name("monitor", "var-mc-2")
@@ -313,7 +316,7 @@ func variableOutOfBandPatch(id, newValue string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/variables/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/variables/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -331,7 +334,7 @@ func variableOutOfBandPatch(id, newValue string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /variables/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/variables/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

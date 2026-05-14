@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -289,7 +290,16 @@ func (r *variableResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInVariableResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetVariable(ctx, id, &api.GetVariableParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Variable After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInVariableResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Variable Response", err.Error())
 		return
@@ -427,16 +437,14 @@ func flattenVariable(_ context.Context, data api.DataInVariableResponse, model *
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// monitor_id — nullable to-one
-		if rels.Monitor != nil && rels.Monitor.Data != nil {
-			model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
-		} else {
-			model.MonitorID = types.StringNull()
-		}
-	} else {
+	// monitor_id — nullable to-one. Preserve the prior model value when the API
+	// echoes only `links` (no embedded `data`); overwriting with null would
+	// cause "was X, but now null" inconsistency errors after a successful
+	// create.
+	rels := data.Relationships
+	if rels != nil && rels.Monitor != nil && rels.Monitor.Data != nil {
+		model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
+	} else if model.MonitorID.IsUnknown() {
 		model.MonitorID = types.StringNull()
 	}
 

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -236,7 +237,13 @@ func (r *alarmResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_alarm: reading alarm", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().GetAlarm(ctx, id, &api.GetAlarmParams{})
+	// Request the monitor relationship via `?include=monitor` so the response
+	// populates Relationships.Monitor.Data. Without this, a bare GET on the
+	// staging API echoes the relationship with `links` only, leaving monitor_id
+	// null after import (see flattenAlarm).
+	include := "monitor"
+	query := map[string]*string{"include": &include}
+	apiResp, err := r.client.Inner().GetAlarm(ctx, id, &api.GetAlarmParams{Query: &query})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Alarm", "Could not read alarm "+id+": "+err.Error())
 		return
@@ -339,7 +346,16 @@ func (r *alarmResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	data, err := client.UnmarshalDocument[api.DataInAlarmResponse](apiResp.Body)
+	respBody, cleanup, err := client.ReadOrRefetch(apiResp, func() (*http.Response, error) {
+		return r.client.Inner().GetAlarm(ctx, id, &api.GetAlarmParams{})
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Error Reading Alarm After Update", err.Error())
+		return
+	}
+	defer cleanup()
+
+	data, err := client.UnmarshalDocument[api.DataInAlarmResponse](respBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Alarm Response", err.Error())
 		return
@@ -480,16 +496,13 @@ func flattenAlarm(_ context.Context, data api.DataInAlarmResponse, model *alarmR
 		}
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
-
-		// monitor_id — to-one
-		if rels.Monitor != nil && rels.Monitor.Data != nil {
-			model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
-		} else {
-			model.MonitorID = types.StringNull()
-		}
-	} else {
+	// monitor_id — to-one. Preserve the prior model value when the API echoes
+	// only `links` (no embedded `data`); overwriting with null would cause
+	// "was X, but now null" inconsistency errors after a successful create.
+	rels := data.Relationships
+	if rels != nil && rels.Monitor != nil && rels.Monitor.Data != nil {
+		model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
+	} else if model.MonitorID.IsUnknown() {
 		model.MonitorID = types.StringNull()
 	}
 

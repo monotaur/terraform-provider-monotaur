@@ -43,7 +43,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_basic(t *testing.T) {
-	labelName := acctest.Name("label", "pb-basic")
+	labelName := acctest.LabelText("pb-basic")
 	componentName := acctest.Name("component", "pb-basic")
 	monitorName := acctest.Name("monitor", "pb-basic")
 
@@ -95,7 +95,7 @@ func TestAccMonotaurProbe_basic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_drift(t *testing.T) {
-	labelName := acctest.Name("label", "pb-drift")
+	labelName := acctest.LabelText("pb-drift")
 	componentName := acctest.Name("component", "pb-drift")
 	monitorName := acctest.Name("monitor", "pb-drift")
 
@@ -145,6 +145,9 @@ func TestAccMonotaurProbe_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -153,62 +156,114 @@ func TestAccMonotaurProbe_drift(t *testing.T) {
 // ---------------------------------------------------------------------------
 // TestAccMonotaurProbe_sensorIDs: sensor_ids cycling
 //
-// This test validates that sensor_ids can be managed on the probe without
-// creating a circular dependency. Sensors are always created with
-// probe_id pointing at the probe; sensor_ids on the probe is used only as
-// an explicit override in steps 2 and 3.
+// The Monotaur schema exposes the probe<->sensor relationship from both sides
+// (probe.sensor_ids and sensor.probe_id are both writable). In HCL, having
+// both probe.sensor_ids = [monotaur_sensor.s1.id] AND sensor.probe_id =
+// monotaur_probe.test.id creates an unresolvable graph cycle. To exercise the
+// probe.sensor_ids PATCH path without that cycle, this test pre-creates the
+// entire parent chain (label, component, monitor, probe) AND the sensors via
+// raw API helpers, then has Terraform manage only the probe via `terraform
+// import`. The sensors live outside Terraform's graph, so probe.sensor_ids
+// can reference their IDs as plain strings.
 //
 // Steps:
-//  1. Config A: probe without sensor_ids + sensor_s1 + sensor_s2 (both with
-//     probe_id = probe.id). After apply, the API populates probe.sensor_ids
-//     automatically. Assert sensor_ids.# = "2".
-//  2. Config B: probe with sensor_ids = [s1.id] + both sensors. Assert
-//     sensor_ids.# = "1" and sensor_ids.0 matches s1.id.
-//  3. Config C: probe with sensor_ids = [s1.id, s2.id] + both sensors. Assert
-//     sensor_ids.# = "2".
-//
-// Deletion is performed automatically by the test framework after all steps.
+//  1. Import the pre-created probe. Verify sensor_ids was auto-populated to
+//     [s1, s2] by the API (the sensors point at the probe via probe_id).
+//  2. Apply config with explicit sensor_ids = [s1]. PATCH must reduce the
+//     probe's sensor list to [s1]. Note: the API cascade-deletes the unlinked
+//     sensor (s2), so the test cannot re-add it in a later step.
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_sensorIDs(t *testing.T) {
-	labelName := acctest.Name("label", "pb-sid")
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+	testAccPreCheck(t)
+
+	labelName := acctest.LabelText("pb-sid")
 	componentName := acctest.Name("component", "pb-sid")
 	monitorName := acctest.Name("monitor", "pb-sid")
 	sensor1Name := acctest.Name("sensor", "p1a")
 	sensor2Name := acctest.Name("sensor", "p1b")
 
+	labelID, labelCleanup, err := createLabel(labelName)
+	if err != nil {
+		t.Fatalf("createLabel: %v", err)
+	}
+	defer labelCleanup()
+
+	componentID, componentCleanup, err := createComponent(componentName, []string{labelID})
+	if err != nil {
+		t.Fatalf("createComponent: %v", err)
+	}
+	defer componentCleanup()
+
+	monitorID, monitorCleanup, err := createMonitor(monitorName, []string{componentID})
+	if err != nil {
+		t.Fatalf("createMonitor: %v", err)
+	}
+	defer monitorCleanup()
+
+	probeID, probeCleanup, err := createProbe(monitorID)
+	if err != nil {
+		t.Fatalf("createProbe: %v", err)
+	}
+	defer probeCleanup()
+
+	s1ID, s1Cleanup, err := createSensor(probeID, sensor1Name)
+	if err != nil {
+		t.Fatalf("createSensor s1: %v", err)
+	}
+	defer s1Cleanup()
+
+	// s2 has no ID variable: it's referenced only by the auto-population check
+	// after import. Step 2 explicitly drops it, and the API cascade-deletes it
+	// when unlinked, so the cleanup below tolerates a 404.
+	_, s2Cleanup, err := createSensor(probeID, sensor2Name)
+	if err != nil {
+		t.Fatalf("createSensor s2: %v", err)
+	}
+	defer s2Cleanup()
+
+	configNoSensorIDs := fmt.Sprintf(`
+resource "monotaur_probe" "test" {
+  monitor_id = %q
+}
+`, monitorID)
+	configOneSensorID := fmt.Sprintf(`
+resource "monotaur_probe" "test" {
+  monitor_id = %q
+  sensor_ids = [%q]
+}
+`, monitorID, s1ID)
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			// Step 1: Config A — probe without sensor_ids, two sensors pointing at
-			// the probe via probe_id. After apply + implicit read, the API returns
-			// both sensors in probe.sensor_ids.
+			// Step 1: Import the pre-created probe. The API auto-populates
+			// sensor_ids from sensors with probe_id pointing at the probe.
 			{
-				Config: testAccProbeConfigWithSensors(labelName, componentName, monitorName, sensor1Name, sensor2Name, false, nil),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("monotaur_probe.test", "id"),
-					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "2"),
-				),
+				Config:             configNoSensorIDs,
+				ResourceName:       "monotaur_probe.test",
+				ImportState:        true,
+				ImportStateId:      probeID,
+				ImportStatePersist: true,
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("expected 1 imported state, got %d", len(states))
+					}
+					if got := states[0].Attributes["sensor_ids.#"]; got != "2" {
+						return fmt.Errorf("expected sensor_ids.# = 2 after import, got %q", got)
+					}
+					return nil
+				},
 			},
-			// Step 2: Config B — probe with sensor_ids = [s1.id] only. The PATCH
-			// removes s2 from the probe's sensor list.
+			// Step 2: Explicit sensor_ids = [s1] — PATCH reduces the probe's
+			// sensor list and the API cascade-deletes the unlinked s2.
 			{
-				Config: testAccProbeConfigWithSensors(labelName, componentName, monitorName, sensor1Name, sensor2Name, true, []string{"s1"}),
+				Config: configOneSensorID,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "1"),
-					resource.TestCheckTypeSetElemAttrPair(
-						"monotaur_probe.test", "sensor_ids.*",
-						"monotaur_sensor.s1", "id",
-					),
-				),
-			},
-			// Step 3: Config C — probe with sensor_ids = [s1.id, s2.id]. The PATCH
-			// adds s2 back to the probe's sensor list.
-			{
-				Config: testAccProbeConfigWithSensors(labelName, componentName, monitorName, sensor1Name, sensor2Name, true, []string{"s1", "s2"}),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "2"),
+					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.0", s1ID),
 				),
 			},
 		},
@@ -246,56 +301,6 @@ resource "monotaur_probe" "test" {
 `, labelName, componentName, monitorName, active, schedule)
 }
 
-// testAccProbeConfigWithSensors returns a Terraform configuration with the
-// full hierarchy plus two sensors. When setSensorIDs is true, sensor_ids is
-// set explicitly on the probe using the given sensorKeys (each element must be
-// "s1" or "s2", naming the sensor resource). When setSensorIDs is false,
-// sensor_ids is omitted so the API manages it via the sensors' probe_id links.
-func testAccProbeConfigWithSensors(labelName, componentName, monitorName, sensor1Name, sensor2Name string, setSensorIDs bool, sensorKeys []string) string {
-	sensorIDsBlock := ""
-	if setSensorIDs && len(sensorKeys) > 0 {
-		refs := make([]string, len(sensorKeys))
-		for i, k := range sensorKeys {
-			refs[i] = fmt.Sprintf("monotaur_sensor.%s.id", k)
-		}
-		sensorIDsBlock = fmt.Sprintf("\n  sensor_ids = [%s]", strings.Join(refs, ", "))
-	}
-
-	return fmt.Sprintf(`
-resource "monotaur_label" "test" {
-  text = %q
-}
-
-resource "monotaur_component" "test" {
-  name      = %q
-  label_ids = [monotaur_label.test.id]
-}
-
-resource "monotaur_monitor" "test" {
-  name          = %q
-  component_ids = [monotaur_component.test.id]
-}
-
-resource "monotaur_probe" "test" {
-  monitor_id = monotaur_monitor.test.id%s
-}
-
-resource "monotaur_sensor" "s1" {
-  name        = %q
-  plugin_name = "http"
-  type        = "HttpSensor"
-  probe_id    = monotaur_probe.test.id
-}
-
-resource "monotaur_sensor" "s2" {
-  name        = %q
-  plugin_name = "http"
-  type        = "HttpSensor"
-  probe_id    = monotaur_probe.test.id
-}
-`, labelName, componentName, monitorName, sensorIDsBlock, sensor1Name, sensor2Name)
-}
-
 // ---------------------------------------------------------------------------
 // Out-of-band mutation helper
 // ---------------------------------------------------------------------------
@@ -324,7 +329,7 @@ func probeOutOfBandPatch(id string, active bool) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/probes/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/probes/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -342,7 +347,7 @@ func probeOutOfBandPatch(id string, active bool) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /probes/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/probes/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

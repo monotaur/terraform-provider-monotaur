@@ -80,10 +80,14 @@ func TestAccMonotaurRoleAssignment_basic(t *testing.T) {
 				),
 			},
 			// Step 2: Import by ID — verify round-trip equality of all state attributes.
+			// role_id and service_account_id are skipped: the API echoes those
+			// relationships with `links` only (no `data`) on a bare GET, so a
+			// fresh import has no member IDs to verify against the original.
 			{
-				ResourceName:      "monotaur_role_assignment.test",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "monotaur_role_assignment.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"role_id", "service_account_id"},
 			},
 			// Step 3: Change both role_id and service_account_id. Because both attributes
 			// are marked RequiresReplace, the framework must plan a DestroyBeforeCreate.
@@ -178,6 +182,9 @@ func TestAccMonotaurRoleAssignment_drift(t *testing.T) {
 						plancheck.ExpectNonEmptyPlan(),
 					},
 				},
+				// The framework runs an additional plan after the step; that
+				// plan is also non-empty because the OOB drift is unresolved.
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -234,7 +241,7 @@ resource "monotaur_role_assignment" "test" {
 // ---------------------------------------------------------------------------
 
 // roleAssignmentOutOfBandDelete performs a raw DELETE on
-// /admin/role-assignments/{id}, simulating an operator deletion outside
+// /api/v1/admin.roleAssignments/{id}, simulating an operator deletion outside
 // Terraform. This is intentionally not using the provider's client so the
 // provider does not see the removal until the next Read/Refresh.
 func roleAssignmentOutOfBandDelete(id string) error {
@@ -244,7 +251,7 @@ func roleAssignmentOutOfBandDelete(id string) error {
 		return fmt.Errorf("MONOTAUR_ENDPOINT and MONOTAUR_API_KEY must be set")
 	}
 
-	url := fmt.Sprintf("%s/admin/role-assignments/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/admin.roleAssignments/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("create DELETE request: %w", err)
@@ -262,7 +269,7 @@ func roleAssignmentOutOfBandDelete(id string) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE /admin/role-assignments/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
+		return fmt.Errorf("DELETE /api/v1/admin.roleAssignments/%s: HTTP %d: %s", id, resp.StatusCode, string(raw))
 	}
 	return nil
 }

@@ -34,9 +34,9 @@ func TestAccMonotaurComponent_basic(t *testing.T) {
 
 	componentName := acctest.Name("component", "1")
 	componentNameUpdated := acctest.Name("component", "1u")
-	label1Name := acctest.Name("label", "1")
-	label2Name := acctest.Name("label", "2")
-	label3Name := acctest.Name("label", "3")
+	label1Name := acctest.LabelText("1")
+	label2Name := acctest.LabelText("2")
+	label3Name := acctest.LabelText("3")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -65,11 +65,20 @@ func TestAccMonotaurComponent_basic(t *testing.T) {
 				),
 			},
 			// Step 2: Import by ID — state should match prior config.
+			// label_ids / monitor_ids / maintenance_window_ids are skipped:
+			// the API echoes those relationships with `links` only (no `data`)
+			// on a bare GET, so a fresh import has no member IDs to verify
+			// against the original state.
 			{
-				ResourceName:            "monotaur_component.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"update_date_time"},
+				ResourceName:      "monotaur_component.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateVerifyIgnore: []string{
+					"update_date_time",
+					"label_ids",
+					"monitor_ids",
+					"maintenance_window_ids",
+				},
 			},
 			// Step 3: Update — change name, remove label 2, add label 3.
 			{
@@ -103,8 +112,8 @@ func TestAccMonotaurComponent_drift(t *testing.T) {
 	testAccPreCheck(t)
 
 	componentName := acctest.Name("component", "drift")
-	label1Name := acctest.Name("label", "drift1")
-	label2Name := acctest.Name("label", "drift2")
+	label1Name := acctest.LabelText("drift1")
+	label2Name := acctest.LabelText("drift2")
 
 	var capturedID string
 
@@ -162,9 +171,9 @@ func TestAccMonotaurComponent_labels(t *testing.T) {
 	testAccPreCheck(t)
 
 	componentName := acctest.Name("component", "labels")
-	label1Name := acctest.Name("label", "lblcyc1")
-	label2Name := acctest.Name("label", "lblcyc2")
-	label3Name := acctest.Name("label", "lblcyc3")
+	label1Name := acctest.LabelText("lblcyc1")
+	label2Name := acctest.LabelText("lblcyc2")
+	label3Name := acctest.LabelText("lblcyc3")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -275,8 +284,8 @@ func patchComponentNameOutOfBand(id, newName string) error {
 			"id":   id,
 			"type": "components",
 			"attributes": map[string]interface{}{
-				"openapi-discriminator": "components",
-				"name":                 newName,
+				"openapi:discriminator": "components",
+				"name":                  newName,
 			},
 		},
 	})
@@ -284,7 +293,7 @@ func patchComponentNameOutOfBand(id, newName string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/components/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/components/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -295,12 +304,12 @@ func patchComponentNameOutOfBand(id, newName string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("PATCH /components/%s: %w", id, err)
+		return fmt.Errorf("PATCH /api/v1/components/%s: %w", id, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /components/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/components/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }

@@ -46,7 +46,7 @@ func TestAccMonotaurMonitorStatusRule_basic(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sr-basic")
+	labelName := acctest.LabelText("sr-basic")
 	componentName := acctest.Name("component", "sr-basic")
 	monitorName := acctest.Name("monitor", "sr-basic")
 
@@ -59,37 +59,40 @@ func TestAccMonotaurMonitorStatusRule_basic(t *testing.T) {
 			{
 				Config: testAccMonitorStatusRuleConfig(
 					labelName, componentName, monitorName,
-					"probe.status == 'Down'",
-					"Down",
+					"probe.status == 'Fault'",
+					"Fault",
 					"probe is unreachable",
 				),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_monitor_status_rule.test", "id"),
-					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "predicate", "probe.status == 'Down'"),
-					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status", "Down"),
+					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "predicate", "probe.status == 'Fault'"),
+					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status", "Fault"),
 					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status_message", "probe is unreachable"),
 					resource.TestCheckResourceAttrSet("monotaur_monitor_status_rule.test", "monitor_id"),
 					resource.TestCheckResourceAttrSet("monotaur_monitor_status_rule.test", "create_date_time"),
 					resource.TestCheckResourceAttrSet("monotaur_monitor_status_rule.test", "update_date_time"),
 				),
 			},
-			// Step 2: Import by ID — verify all state attributes round-trip correctly.
+			// Step 2: Import by ID — verify state attributes round-trip. monitor_id
+			// is excluded because JSON:API GETs return relationships as `links`-only
+			// (no `data`), so the imported state can't populate the relationship ID.
 			{
-				ResourceName:      "monotaur_monitor_status_rule.test",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "monotaur_monitor_status_rule.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"monitor_id"},
 			},
 			// Step 3: Update every settable attribute. Assert all changes land in state.
 			{
 				Config: testAccMonitorStatusRuleConfig(
 					labelName, componentName, monitorName,
-					"probe.status == 'Degraded'",
-					"Degraded",
+					"probe.status == 'Warning'",
+					"Warning",
 					"probe is slow",
 				),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "predicate", "probe.status == 'Degraded'"),
-					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status", "Degraded"),
+					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "predicate", "probe.status == 'Warning'"),
+					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status", "Warning"),
 					resource.TestCheckResourceAttr("monotaur_monitor_status_rule.test", "status_message", "probe is slow"),
 				),
 			},
@@ -112,7 +115,7 @@ func TestAccMonotaurMonitorStatusRule_drift(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sr-drift")
+	labelName := acctest.LabelText("sr-drift")
 	componentName := acctest.Name("component", "sr-drift")
 	monitorName := acctest.Name("monitor", "sr-drift")
 
@@ -129,8 +132,8 @@ func TestAccMonotaurMonitorStatusRule_drift(t *testing.T) {
 			{
 				Config: testAccMonitorStatusRuleConfig(
 					labelName, componentName, monitorName,
-					"probe.status == 'Down'",
-					"Down",
+					"probe.status == 'Fault'",
+					"Fault",
 					"probe is down",
 				),
 				Check: resource.ComposeTestCheckFunc(
@@ -155,13 +158,14 @@ func TestAccMonotaurMonitorStatusRule_drift(t *testing.T) {
 					if capturedID == "" {
 						t.Fatalf("drift test: capturedID is empty — create step must have failed")
 					}
-					if err := monitorStatusRuleOutOfBandPatch(capturedID, "probe.status == 'Degraded'"); err != nil {
+					if err := monitorStatusRuleOutOfBandPatch(capturedID, "probe.status == 'Warning'"); err != nil {
 						t.Fatalf("drift test: out-of-band PATCH failed: %v", err)
 					}
 				},
 				// RefreshState re-reads the live API state into Terraform state without
 				// applying the config. PostRefresh plan checks then assert drift.
-				RefreshState: true,
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 				RefreshPlanChecks: resource.RefreshPlanChecks{
 					PostRefresh: []plancheck.PlanCheck{
 						plancheck.ExpectNonEmptyPlan(),
@@ -191,7 +195,7 @@ func TestAccMonotaurMonitorStatusRule_monitorReplace(t *testing.T) {
 		t.Skip("Set TF_ACC=1 to run acceptance tests")
 	}
 
-	labelName := acctest.Name("label", "sr-mrep")
+	labelName := acctest.LabelText("sr-mrep")
 	componentName := acctest.Name("component", "sr-mrep")
 	monitorName1 := acctest.Name("monitor", "sr-mrep-1")
 	monitorName2 := acctest.Name("monitor", "sr-mrep-2")
@@ -206,8 +210,8 @@ func TestAccMonotaurMonitorStatusRule_monitorReplace(t *testing.T) {
 					labelName, componentName,
 					monitorName1, monitorName2,
 					"monitor_1", // which monitor the rule uses
-					"probe.status == 'Down'",
-					"Down",
+					"probe.status == 'Fault'",
+					"Fault",
 					"",
 				),
 				Check: resource.ComposeTestCheckFunc(
@@ -225,8 +229,8 @@ func TestAccMonotaurMonitorStatusRule_monitorReplace(t *testing.T) {
 					labelName, componentName,
 					monitorName1, monitorName2,
 					"monitor_2", // now pointing at monitor_2
-					"probe.status == 'Down'",
-					"Down",
+					"probe.status == 'Fault'",
+					"Fault",
 					"",
 				),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
@@ -360,7 +364,7 @@ func monitorStatusRuleOutOfBandPatch(id, newPredicate string) error {
 		return fmt.Errorf("marshal patch body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/monitor-status-rules/%s", endpoint, id)
+	url := fmt.Sprintf("%s/api/v1/monitorStatusRules/%s", endpoint, id)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create PATCH request: %w", err)
@@ -377,7 +381,7 @@ func monitorStatusRuleOutOfBandPatch(id, newPredicate string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("PATCH /monitor-status-rules/%s: HTTP %d", id, resp.StatusCode)
+		return fmt.Errorf("PATCH /api/v1/monitorStatusRules/%s: HTTP %d", id, resp.StatusCode)
 	}
 	return nil
 }
