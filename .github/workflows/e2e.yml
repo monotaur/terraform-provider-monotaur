@@ -9,7 +9,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write  # needed to comment on PRs
+  pull-requests: write  # comment on PRs
+  packages: read        # pull ghcr.io/monotaur/* with GITHUB_TOKEN
 
 jobs:
   e2e:
@@ -21,6 +22,12 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.label.name == 'run-e2e')
 
+    env:
+      NAMESPACE: monotaur
+      MONOTAUR_RELEASE: monotaur
+      MONOTAUR_SERVICE: monotaur-monotaur-core
+      MONOTAUR_PORT: "5000"
+
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
@@ -29,36 +36,116 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Check secrets availability
-        id: check-secrets
+      - name: Create KIND cluster
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+
+      - name: Install Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
+        with:
+          version: v3.17.0
+
+      - name: Create namespace
+        run: kubectl create namespace "$NAMESPACE"
+
+      - name: Install PostgreSQL (Bitnami)
         run: |
-          if [ -z "${{ secrets.MONOTAUR_E2E_API_KEY }}" ]; then
-            echo "MONOTAUR_E2E_API_KEY secret is not set — skipping E2E tests (fork or unconfigured repo)"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
+          helm install pg oci://registry-1.docker.io/bitnamicharts/postgresql \
+            --namespace "$NAMESPACE" \
+            --set auth.username=monotaur \
+            --set auth.database=monotaur \
+            --set auth.password=testpassword123 \
+            --set primary.persistence.enabled=false \
+            --set readReplicas.persistence.enabled=false \
+            --wait --timeout 5m
+
+      - name: Install Redis (Bitnami)
+        run: |
+          helm install rd oci://registry-1.docker.io/bitnamicharts/redis \
+            --namespace "$NAMESPACE" \
+            --set auth.enabled=false \
+            --set master.persistence.enabled=false \
+            --set replica.replicaCount=0 \
+            --wait --timeout 5m
+
+      - name: Create Monotaur prerequisite Secrets
+        run: |
+          kubectl -n "$NAMESPACE" create secret generic monotaur-postgres \
+            --from-literal=connection-string='Host=pg-postgresql;Port=5432;Database=monotaur;Username=monotaur;Password=testpassword123'
+          kubectl -n "$NAMESPACE" create secret generic monotaur-redis \
+            --from-literal=connection-string='rd-redis-master:6379'
+          kubectl -n "$NAMESPACE" create secret generic monotaur-api-keys \
+            --from-literal=monotaur-worker=ci-dummy-worker-key
+
+      - name: Create GHCR pull secret
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_PACKAGES_READ_TOKEN }}
+        run: |
+          kubectl -n "$NAMESPACE" create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="${{ github.actor }}" \
+            --docker-password="$GHCR_TOKEN"
+
+      - name: Install Monotaur chart
+        run: |
+          helm install "$MONOTAUR_RELEASE" oci://ghcr.io/monotaur/charts/monotaur-chart \
+            --namespace "$NAMESPACE" \
+            --values scripts/ci-values.yaml \
+            --wait --timeout 10m
+
+      - name: Extract bootstrap API key
+        env:
+          NAMESPACE: ${{ env.NAMESPACE }}
+          DEPLOYMENT: ${{ env.MONOTAUR_SERVICE }}
+        run: bash scripts/ci-extract-bootstrap-key.sh
+
+      - name: Port-forward Monotaur API
+        run: |
+          mkdir -p e2e-results
+          nohup kubectl -n "$NAMESPACE" port-forward \
+            "svc/$MONOTAUR_SERVICE" "$MONOTAUR_PORT:$MONOTAUR_PORT" \
+            > e2e-results/port-forward.log 2>&1 &
+          echo $! > e2e-results/port-forward.pid
+          # Wait for the tunnel to accept connections.
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:$MONOTAUR_PORT/health" >/dev/null 2>&1; then
+              echo "Port-forward is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Port-forward never came up" >&2
+          cat e2e-results/port-forward.log >&2
+          exit 1
 
       - name: Run E2E suite
-        if: steps.check-secrets.outputs.skip == 'false'
         env:
-          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_E2E_ENDPOINT }}
-          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_E2E_API_KEY }}
+          MONOTAUR_ENDPOINT: http://127.0.0.1:5000
           TF_ACC: "1"
         run: make e2e
 
-      - name: Sweep staging (cleanup)
-        if: always() && steps.check-secrets.outputs.skip == 'false'
-        env:
-          MONOTAUR_ENDPOINT: ${{ secrets.MONOTAUR_E2E_ENDPOINT }}
-          MONOTAUR_API_KEY: ${{ secrets.MONOTAUR_E2E_API_KEY }}
-          TF_ACC: "1"
-          SWEEP: "true"
-        run: make e2e-sweep
+      - name: Collect cluster diagnostics
+        if: failure()
+        run: |
+          set +e
+          mkdir -p e2e-results/cluster-diag
+          kubectl -n "$NAMESPACE" get pods,jobs,svc,events \
+            --sort-by=.metadata.creationTimestamp \
+            > e2e-results/cluster-diag/overview.txt 2>&1
+          helm -n "$NAMESPACE" status "$MONOTAUR_RELEASE" \
+            > e2e-results/cluster-diag/helm-status.txt 2>&1
+          for pod in $(kubectl -n "$NAMESPACE" get pods -o name); do
+            safe=$(echo "$pod" | tr '/' '-')
+            kubectl -n "$NAMESPACE" describe "$pod" \
+              > "e2e-results/cluster-diag/${safe}.describe.txt" 2>&1
+            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=500 \
+              > "e2e-results/cluster-diag/${safe}.logs.txt" 2>&1
+          done
+          cp e2e-results/port-forward.log e2e-results/cluster-diag/ 2>/dev/null
+          exit 0
 
       - name: Upload E2E results
-        if: always() && steps.check-secrets.outputs.skip == 'false'
-        uses: actions/upload-artifact@ea165f8d65b6e68b849e1b862ed2881e63a5980a  # v4.6.2
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: e2e-results
           path: |
@@ -66,10 +153,12 @@ jobs:
             e2e-results/summary.md
             e2e-results/raw.jsonl
             e2e-results/sweep.txt
+            e2e-results/port-forward.log
+            e2e-results/cluster-diag/**
           if-no-files-found: ignore
 
       - name: Comment on PR with results
-        if: failure() && github.event_name == 'pull_request' && steps.check-secrets.outputs.skip == 'false'
+        if: failure() && github.event_name == 'pull_request'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
         with:
           script: |
@@ -84,3 +173,10 @@ jobs:
               repo: context.repo.repo,
               body: `## E2E Test Results\n\n${summary}`
             });
+
+      - name: Stop port-forward
+        if: always()
+        run: |
+          if [ -f e2e-results/port-forward.pid ]; then
+            kill "$(cat e2e-results/port-forward.pid)" 2>/dev/null || true
+          fi
