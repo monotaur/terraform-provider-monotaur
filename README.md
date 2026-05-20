@@ -165,7 +165,12 @@ kubectl -n monotaur create secret docker-registry ghcr-pull \
 
 ### 4. Install the Monotaur chart
 
+The chart itself is also private, so authenticate Helm to GHCR before pulling:
+
 ```bash
+echo "$GHCR_TOKEN" | helm registry login ghcr.io \
+  --username "$GHCR_USERNAME" --password-stdin
+
 helm install monotaur oci://ghcr.io/monotaur/charts/monotaur-chart \
   -n monotaur \
   --values scripts/ci-values.yaml \

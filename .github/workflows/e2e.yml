@@ -85,6 +85,14 @@ jobs:
             --docker-username="${{ github.actor }}" \
             --docker-password="$GHCR_TOKEN"
 
+      - name: Log Helm into GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_PACKAGES_READ_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
       - name: Install Monotaur chart
         run: |
           helm install "$MONOTAUR_RELEASE" oci://ghcr.io/monotaur/charts/monotaur-chart \
