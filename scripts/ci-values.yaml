@@ -1,0 +1,17 @@
+# Helm values overlay used by .github/workflows/e2e.yml when installing the
+# Monotaur chart into the ephemeral KIND cluster. Mirrors the shape of the
+# chart's own ci/ct-values.yaml: latest image tag, GHCR pull secret, worker
+# subchart disabled (the worker image is not actually published yet, so
+# enabling it would just spin up a second Core silo).
+
+monotaur-core:
+  image:
+    tag: latest
+  imagePullSecrets:
+    - name: ghcr-pull
+
+monotaur-worker:
+  install: false
+
+monotaur-dev-tools:
+  install: false

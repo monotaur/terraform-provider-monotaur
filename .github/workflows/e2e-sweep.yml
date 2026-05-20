@@ -1,8 +1,13 @@
 name: E2E Sweep (nightly)
 
+# Parked: the nightly E2E workflow now runs against an ephemeral KIND cluster
+# (see e2e.yml), so there is no shared staging environment to sweep. The cron
+# trigger is commented out to stop the workflow firing against unconfigured
+# MONOTAUR_STAGING_* secrets. Manual dispatch is preserved so the job can still
+# be run against staging if/when those secrets are wired up again.
 on:
-  schedule:
-    - cron: "0 3 * * *"  # 03:00 UTC daily
+  # schedule:
+  #   - cron: "0 3 * * *"  # 03:00 UTC daily — disabled, see header comment
   workflow_dispatch:
 
 permissions:

@@ -31,15 +31,19 @@ Both required variables must be set before running any E2E target. The
 preflight script (`scripts/e2e-preflight.sh`) validates them and aborts with a
 one-line error message if either is missing.
 
-### Staging API access
+### Running API instance
 
-Tests run against the staging Monotaur environment. You need:
+Tests need a running Monotaur API at `MONOTAUR_ENDPOINT` with a key that can
+create and delete every resource type the suite exercises. Any of the following
+works:
 
-- Network access to `MONOTAUR_ENDPOINT`
-- An API key that has permission to create and delete all resource types tested
-  by the suite
-
-Contact your team to obtain staging credentials if you do not already have them.
+- A shared staging environment, if your team runs one — contact them for the
+  endpoint and a write-scoped API key.
+- A local install via the [monotaur-chart](https://github.com/monotaur/monotaur-chart)
+  on KIND/minikube, port-forwarded to `localhost`. This is what CI does — see
+  `.github/workflows/e2e.yml` for the exact sequence.
+- Any other instance you can reach over the network, provided the API key has
+  full write access.
 
 ## Running the suite
 
@@ -221,15 +225,42 @@ Key facts:
 - Run `make e2e-sweep` manually any time you want to clean up staging without
   running the full suite.
 
-## Nightly safety net
+## Nightly CI
 
-A GitHub Actions workflow (`.github/workflows/e2e-sweep.yml`) runs the sweeper
-against staging every night at 03:00 UTC and on manual dispatch. It uses the
-`MONOTAUR_STAGING_ENDPOINT` and `MONOTAUR_STAGING_API_KEY` repository secrets.
+`.github/workflows/e2e.yml` runs the full E2E suite nightly at 02:00 UTC
+against an ephemeral [KIND](https://kind.sigs.k8s.io/) cluster spun up inside
+the GitHub Actions runner. Each run:
 
-This provides a safety net for resources leaked by any workflow — including
-runs that were cancelled or timed out — and keeps the staging environment clean
-between scheduled test runs.
+1. Starts a fresh KIND cluster.
+2. Installs Bitnami `postgresql` and `redis` charts (persistence disabled).
+3. Creates the prerequisite Secrets the Monotaur chart consumes
+   (`monotaur-postgres`, `monotaur-redis`, `monotaur-api-keys`) plus a
+   `ghcr-pull` `imagePullSecrets` built from `${{ secrets.GITHUB_TOKEN }}`.
+4. Installs the Monotaur chart from `oci://ghcr.io/monotaur/charts/monotaur-chart`
+   with `scripts/ci-values.yaml`.
+5. Waits for the `monotaur-bootstrap-credentials` Secret to appear and decodes
+   its admin API key (`scripts/ci-extract-bootstrap-key.sh`).
+6. Background-runs `kubectl port-forward` to expose the Monotaur API on
+   `http://127.0.0.1:5000`.
+7. Runs `make e2e` against that local endpoint.
+
+The same workflow also runs on `workflow_dispatch` and on pull requests labeled
+`run-e2e`. The cluster is torn down with the runner — no shared state between
+runs, so the `make e2e` sweeper step is a no-op in CI but stays in place for
+local-dev use.
+
+On failure, the workflow uploads `e2e-results/cluster-diag/**` (pod describes,
+container logs, `helm status`, event stream) and `port-forward.log` alongside
+the usual `junit.xml` / `summary.md` / `raw.jsonl` artifacts.
+
+### Parked staging sweeper
+
+`.github/workflows/e2e-sweep.yml` previously swept a shared staging
+environment nightly. Its cron trigger is commented out — there is no shared
+environment to sweep under the KIND-only approach. The file is retained with
+`workflow_dispatch` only so the job can be revived if a staging environment is
+reintroduced; uncomment the `schedule:` block and re-configure
+`MONOTAUR_STAGING_*` secrets to bring it back.
 
 ## Debugging a failing test
 
