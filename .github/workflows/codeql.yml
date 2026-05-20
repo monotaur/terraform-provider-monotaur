@@ -1,12 +1,17 @@
 name: CodeQL
 
+# Disabled: push / pull_request / schedule triggers are commented out so the
+# workflow no longer runs automatically. Manual dispatch is preserved so the
+# job can still be invoked from the Actions UI when needed. Re-enable by
+# uncommenting the triggers below.
 on:
-  push:
-    branches: ["main", "milestone/**"]
-  pull_request:
-    branches: ["main", "milestone/**"]
-  schedule:
-    - cron: "0 4 * * 1"  # weekly on Monday at 4am UTC
+  # push:
+  #   branches: ["main", "milestone/**"]
+  # pull_request:
+  #   branches: ["main", "milestone/**"]
+  # schedule:
+  #   - cron: "0 4 * * 1"  # weekly on Monday at 4am UTC
+  workflow_dispatch:
 
 jobs:
   analyze:

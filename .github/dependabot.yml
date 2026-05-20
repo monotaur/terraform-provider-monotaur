@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # GitHub Actions used by .github/workflows/*.yml.
+  # Actions are pinned to commit SHAs; Dependabot rewrites both the SHA
+  # and the trailing version comment on each bump.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Devcontainer features pulled by .devcontainer/devcontainer.json.
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
