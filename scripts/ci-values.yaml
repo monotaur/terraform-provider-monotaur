@@ -11,7 +11,7 @@ monotaur-core:
     - name: ghcr-pull
 
 monotaur-worker:
-  install: false
+  install: true
 
 monotaur-dev-tools:
   install: false
