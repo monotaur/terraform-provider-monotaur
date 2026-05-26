@@ -7,11 +7,17 @@
 monotaur-core:
   image:
     tag: latest
+    pullPolicy: Always    
   imagePullSecrets:
     - name: ghcr-pull
 
 monotaur-worker:
   install: true
+  image:
+    tag: latest
+    pullPolicy: Always    
+  imagePullSecrets:
+    - name: ghcr-pull  
 
 monotaur-dev-tools:
   install: false
