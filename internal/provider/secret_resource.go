@@ -456,16 +456,16 @@ func flattenSecret(_ context.Context, data api.DataInSecretResponse, model *secr
 		// triggering spurious drift detection.
 	}
 
-	if data.Relationships != nil {
-		rels := data.Relationships
+	// Relationships often arrive with only `links` (no embedded `data`). When
+	// `data` is absent, preserve the prior model value — the plan for
+	// create/update, or the state for read — to avoid "was X, but now null"
+	// inconsistency errors after a successful apply.
+	rels := data.Relationships
 
-		// monitor_id — nullable to-one
-		if rels.Monitor != nil && rels.Monitor.Data != nil {
-			model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
-		} else {
-			model.MonitorID = types.StringNull()
-		}
-	} else {
+	// monitor_id — nullable to-one
+	if rels != nil && rels.Monitor != nil && rels.Monitor.Data != nil {
+		model.MonitorID = types.StringValue(rels.Monitor.Data.Id)
+	} else if model.MonitorID.IsUnknown() {
 		model.MonitorID = types.StringNull()
 	}
 
