@@ -7,7 +7,12 @@
 		"--memory-swap=10g"
 	],
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-	"features": {		
+	// Store ALL Claude Code config (incl. the global .claude.json) inside the
+	// mounted .claude volume so settings/auth survive container rebuilds.
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+	},
+	"features": {
 		"ghcr.io/devcontainers/features/github-cli:1": {},
 		"ghcr.io/devcontainers/features/go:1": {},
 		"ghcr.io/devcontainers/features/terraform:1": {},
