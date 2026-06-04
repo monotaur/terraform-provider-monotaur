@@ -185,6 +185,7 @@ func (p *MonotaurProvider) Resources(_ context.Context) []func() resource.Resour
 		NewRoleResource,
 		NewSecretResource,
 		NewSensorResource,
+		NewServiceAccountResource,
 		NewVariableResource,
 	}
 }
