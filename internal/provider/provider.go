@@ -204,6 +204,7 @@ func (p *MonotaurProvider) DataSources(_ context.Context) []func() datasource.Da
 		NewRoleDataSource,
 		NewSecretDataSource,
 		NewSensorDataSource,
+		NewServiceAccountDataSource,
 		NewVariableDataSource,
 	}
 }
