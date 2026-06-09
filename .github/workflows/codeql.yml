@@ -1,16 +1,16 @@
 name: CodeQL
 
-# Disabled: push / pull_request / schedule triggers are commented out so the
-# workflow no longer runs automatically. Manual dispatch is preserved so the
-# job can still be invoked from the Actions UI when needed. Re-enable by
-# uncommenting the triggers below.
+# Static analysis with CodeQL. Runs on pushes and PRs to main, weekly on a
+# schedule, and on manual dispatch. CodeQL is free for public repositories;
+# results appear under the repository's Security → Code scanning tab once
+# GitHub Code Security is enabled in repo settings.
 on:
-  # push:
-  #   branches: ["main", "milestone/**"]
-  # pull_request:
-  #   branches: ["main", "milestone/**"]
-  # schedule:
-  #   - cron: "0 4 * * 1"  # weekly on Monday at 4am UTC
+  push:
+    branches: ["main", "milestone/**"]
+  pull_request:
+    branches: ["main", "milestone/**"]
+  schedule:
+    - cron: "0 4 * * 1"  # weekly on Monday at 4am UTC
   workflow_dispatch:
 
 jobs:
