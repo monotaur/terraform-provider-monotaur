@@ -194,6 +194,13 @@ func TestServiceAccountResource_constructorReturnsNonNil(t *testing.T) {
 	}
 }
 
+func TestServiceAccountDataSource_constructorReturnsNonNil(t *testing.T) {
+	ds := provider.NewServiceAccountDataSource()
+	if ds == nil {
+		t.Fatal("NewServiceAccountDataSource returned nil")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Acceptance tests (env-gated via TF_ACC=1)
 //

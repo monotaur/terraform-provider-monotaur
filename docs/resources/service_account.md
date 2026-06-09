@@ -3,12 +3,12 @@
 page_title: "monotaur_service_account Resource - monotaur"
 subcategory: ""
 description: |-
-  Manages a Monotaur service account. Service accounts are non-human identities used for programmatic API access.
+  Manages a Monotaur service account. Service accounts are non-human identities that own API keys and receive role assignments. Role assignments and API keys are managed independently via monotaur_role_assignment and monotaur_api_key.
 ---
 
 # monotaur_service_account (Resource)
 
-Manages a Monotaur service account. Service accounts are non-human identities used for programmatic API access.
+Manages a Monotaur service account. Service accounts are non-human identities that own API keys and receive role assignments. Role assignments and API keys are managed independently via `monotaur_role_assignment` and `monotaur_api_key`.
 
 ## Example Usage
 
@@ -30,7 +30,7 @@ resource "monotaur_service_account" "ci_bot" {
 ### Optional
 
 - `description` (String) An optional description of the service account.
-- `disabled` (Boolean) Whether the service account is disabled. Defaults to false.
+- `disabled` (Boolean) Whether the service account is disabled. Disabled service accounts cannot authenticate.
 
 ### Read-Only
 
