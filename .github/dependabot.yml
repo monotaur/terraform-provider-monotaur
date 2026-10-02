@@ -15,6 +15,18 @@ updates:
           - minor
           - patch
 
+  # Go modules in go.mod (provider dependencies and tools.go tooling).
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   # Devcontainer features pulled by .devcontainer/devcontainer.json.
   - package-ecosystem: devcontainers
     directory: /
