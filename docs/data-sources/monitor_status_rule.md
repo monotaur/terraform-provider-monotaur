@@ -30,6 +30,7 @@ data "monotaur_monitor_status_rule" "degraded" {
 - `create_date_time` (String) The RFC 3339 timestamp when the monitor status rule was created.
 - `monitor_id` (String) The ID of the monitor this status rule belongs to.
 - `predicate` (String) The predicate expression that determines when the rule applies.
+- `priority` (Number) Orders rules that share a `status`: lower values are evaluated first.
 - `status` (String) The monitor status to apply when the predicate matches.
 - `status_message` (String) A message to accompany the status when the predicate matches.
 - `update_date_time` (String) The RFC 3339 timestamp when the monitor status rule was last updated.

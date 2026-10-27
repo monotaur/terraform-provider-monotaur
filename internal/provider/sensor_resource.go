@@ -326,7 +326,7 @@ func (r *sensorResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_sensor: deleting sensor", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteSensor(ctx, id)
+	apiResp, err := r.client.Inner().DeleteSensor(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Sensor", "Could not delete sensor "+id+": "+err.Error())
 		return

@@ -297,7 +297,7 @@ func (r *roleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_role: deleting role", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteAdminRole(ctx, id)
+	apiResp, err := r.client.Inner().DeleteAdminRole(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Role", "Could not delete role "+id+": "+err.Error())
 		return

@@ -59,6 +59,14 @@ func (d *componentDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 				MarkdownDescription: "The RFC 3339 timestamp when the component was last updated.",
 				Computed:            true,
 			},
+			"status": schema.StringAttribute{
+				MarkdownDescription: "The component's aggregated status (`Operational`, `Degraded` or `Nonoperational`).",
+				Computed:            true,
+			},
+			"status_change_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when `status` last changed.",
+				Computed:            true,
+			},
 			"business_hours_id": schema.StringAttribute{
 				MarkdownDescription: "ID of the business hours schedule associated with this component.",
 				Computed:            true,

@@ -338,7 +338,7 @@ func (r *secretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_secret: deleting secret", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteSecret(ctx, id)
+	apiResp, err := r.client.Inner().DeleteSecret(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Secret", "Could not delete secret "+id+": "+err.Error())
 		return

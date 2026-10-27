@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -41,11 +43,15 @@ type monitorResource struct {
 //
 // Attribute mapping:
 //
-//	AttributesInCreateMonitorRequest:  name (required), type (optional)
-//	AttributesInMonitorResponse:       id (computed), name, type, createDateTime (computed),
-//	                                    updateDateTime (computed), status (computed),
-//	                                    statusMessage (computed), statusExpirationDateTime (computed)
-//	RelationshipsIn*MonitorRequest:    component_ids (to-many, optional)
+//	AttributesInCreateMonitorRequest:  name (required), type, enabled, heartbeatInterval,
+//	                                    heartbeatGrace, noDataStatus, noDataMissedIntervals,
+//	                                    faultThreshold, recoveryThreshold, confirmationDelay,
+//	                                    flappingThreshold (optional)
+//	AttributesInMonitorResponse:       id (computed), createDateTime, updateDateTime, status,
+//	                                    statusMessage, statusExpirationDateTime, noDataDeadlineDateTime,
+//	                                    noDataDateTime, pendingStatus, pendingStatusCount,
+//	                                    pendingStatusDateTime, flappingDateTime (computed)
+//	RelationshipsIn*MonitorRequest:    component_ids, label_ids (to-many, optional)
 type monitorResourceModel struct {
 	ID                       types.String `tfsdk:"id"`
 	Name                     types.String `tfsdk:"name"`
@@ -55,7 +61,23 @@ type monitorResourceModel struct {
 	Status                   types.String `tfsdk:"status"`
 	StatusMessage            types.String `tfsdk:"status_message"`
 	StatusExpirationDateTime types.String `tfsdk:"status_expiration_date_time"`
+	Enabled                  types.Bool   `tfsdk:"enabled"`
+	HeartbeatInterval        types.String `tfsdk:"heartbeat_interval"`
+	HeartbeatGrace           types.String `tfsdk:"heartbeat_grace"`
+	NoDataStatus             types.String `tfsdk:"no_data_status"`
+	NoDataMissedIntervals    types.Int64  `tfsdk:"no_data_missed_intervals"`
+	NoDataDeadlineDateTime   types.String `tfsdk:"no_data_deadline_date_time"`
+	NoDataDateTime           types.String `tfsdk:"no_data_date_time"`
+	FaultThreshold           types.Int64  `tfsdk:"fault_threshold"`
+	RecoveryThreshold        types.Int64  `tfsdk:"recovery_threshold"`
+	ConfirmationDelay        types.String `tfsdk:"confirmation_delay"`
+	PendingStatus            types.String `tfsdk:"pending_status"`
+	PendingStatusCount       types.Int64  `tfsdk:"pending_status_count"`
+	PendingStatusDateTime    types.String `tfsdk:"pending_status_date_time"`
+	FlappingThreshold        types.Int64  `tfsdk:"flapping_threshold"`
+	FlappingDateTime         types.String `tfsdk:"flapping_date_time"`
 	ComponentIDs             types.List   `tfsdk:"component_ids"`
+	LabelIDs                 types.List   `tfsdk:"label_ids"`
 }
 
 // Metadata sets the resource type name.
@@ -110,8 +132,89 @@ func (r *monitorResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				MarkdownDescription: "The RFC 3339 timestamp when the current status expires (system-managed, read-only).",
 				Computed:            true,
 			},
+			"enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether the monitor is running. A paused (`false`) monitor stops its probe, ignores heartbeats and samples, opens no alarms and sends no notifications, and the paused period is excluded from uptime. Defaults to `true`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"heartbeat_interval": schema.StringAttribute{
+				MarkdownDescription: "For `Heartbeat` monitors, the expected time between heartbeats, as a .NET TimeSpan (`hh:mm:ss` or `d.hh:mm:ss`, e.g. `00:05:00`).",
+				Optional:            true,
+			},
+			"heartbeat_grace": schema.StringAttribute{
+				MarkdownDescription: "For `Heartbeat` monitors, extra tolerance added to `heartbeat_interval` before a missed heartbeat faults the monitor (`hh:mm:ss` or `d.hh:mm:ss`).",
+				Optional:            true,
+			},
+			"no_data_status": schema.StringAttribute{
+				MarkdownDescription: "For a monitor with a sampling probe, the status the monitor moves to when its probe stops delivering samples (`Unknown`, `Warning` or `Fault`; `Ok` is rejected). Unset uses the server default (`Unknown` unless configured).",
+				Optional:            true,
+			},
+			"no_data_missed_intervals": schema.Int64Attribute{
+				MarkdownDescription: "For a monitor with a sampling probe, how many consecutive scheduled probe runs may pass without a sample before the monitor moves to `no_data_status` (0–1000; `0` turns the check off). Unset uses the server default (3 unless configured).",
+				Optional:            true,
+			},
+			"no_data_deadline_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor goes to `no_data_status` unless a sample arrives first (system-managed, read-only).",
+				Computed:            true,
+			},
+			"no_data_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor entered the no-data state; null while samples are arriving (system-managed, read-only).",
+				Computed:            true,
+			},
+			"fault_threshold": schema.Int64Attribute{
+				MarkdownDescription: "How many consecutive `Fault` samples are needed before the monitor becomes `Fault` and opens an alarm (1–100). Defaults to `1`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"recovery_threshold": schema.Int64Attribute{
+				MarkdownDescription: "How many consecutive `Ok`/`Warning` samples are needed before a faulted monitor recovers and closes its alarm (1–100). Defaults to `1`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"confirmation_delay": schema.StringAttribute{
+				MarkdownDescription: "How long a transition held back by `fault_threshold`/`recovery_threshold` must also have been reported before the monitor takes it (`00:00:01` to `1.00:00:00`). Unset waits for the sample count only.",
+				Optional:            true,
+			},
+			"pending_status": schema.StringAttribute{
+				MarkdownDescription: "The status recent samples report that the monitor has not taken yet because a threshold is not reached (system-managed, read-only).",
+				Computed:            true,
+			},
+			"pending_status_count": schema.Int64Attribute{
+				MarkdownDescription: "How many consecutive samples have reported `pending_status` (system-managed, read-only).",
+				Computed:            true,
+			},
+			"pending_status_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the first sample of the pending run ended (system-managed, read-only).",
+				Computed:            true,
+			},
+			"flapping_threshold": schema.Int64Attribute{
+				MarkdownDescription: "Turns flapping detection on: the monitor is flapping once its last 20 samples switch between `Fault` and `Ok`/`Warning` at least this many times (2–19). Unset turns detection off.",
+				Optional:            true,
+			},
+			"flapping_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor started flapping; null while it is not flapping (system-managed, read-only).",
+				Computed:            true,
+			},
 			"component_ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of components associated with this monitor.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"label_ids": schema.ListAttribute{
+				MarkdownDescription: "IDs of labels attached to this monitor.",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
@@ -158,6 +261,17 @@ func (r *monitorResource) Create(ctx context.Context, req resource.CreateRequest
 		t := api.MonitorType(plan.Type.ValueString())
 		attrs.Type = &t
 	}
+
+	settings := expandMonitorSettings(plan)
+	attrs.Enabled = settings.Enabled
+	attrs.HeartbeatInterval = settings.HeartbeatInterval
+	attrs.HeartbeatGrace = settings.HeartbeatGrace
+	attrs.NoDataStatus = settings.NoDataStatus
+	attrs.NoDataMissedIntervals = settings.NoDataMissedIntervals
+	attrs.FaultThreshold = settings.FaultThreshold
+	attrs.RecoveryThreshold = settings.RecoveryThreshold
+	attrs.ConfirmationDelay = settings.ConfirmationDelay
+	attrs.FlappingThreshold = settings.FlappingThreshold
 
 	rels, diags := buildCreateMonitorRelationships(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -266,6 +380,17 @@ func (r *monitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		attrs.Type = &t
 	}
 
+	settings := expandMonitorSettings(plan)
+	attrs.Enabled = settings.Enabled
+	attrs.HeartbeatInterval = settings.HeartbeatInterval
+	attrs.HeartbeatGrace = settings.HeartbeatGrace
+	attrs.NoDataStatus = settings.NoDataStatus
+	attrs.NoDataMissedIntervals = settings.NoDataMissedIntervals
+	attrs.FaultThreshold = settings.FaultThreshold
+	attrs.RecoveryThreshold = settings.RecoveryThreshold
+	attrs.ConfirmationDelay = settings.ConfirmationDelay
+	attrs.FlappingThreshold = settings.FlappingThreshold
+
 	rels, diags := buildUpdateMonitorRelationships(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -281,9 +406,17 @@ func (r *monitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		},
 	}
 
+	// Settings removed from the configuration are sent as explicit nulls so
+	// the API clears them; an omitted attribute would mean "no change".
+	reqBody, err := client.MarshalWithNullAttributes(body, settings.Nulls)
+	if err != nil {
+		resp.Diagnostics.AddError("Error Updating Monitor", "Could not encode request: "+err.Error())
+		return
+	}
+
 	tflog.Debug(ctx, "monotaur_monitor: updating monitor", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().PatchMonitorWithApplicationVndAPIPlusJSONExtOpenapiBody(ctx, id, &api.PatchMonitorParams{}, body)
+	apiResp, err := r.client.Inner().PatchMonitorWithBody(ctx, id, &api.PatchMonitorParams{}, client.ContentType, reqBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Monitor", "Could not update monitor "+id+": "+err.Error())
 		return
@@ -330,7 +463,7 @@ func (r *monitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_monitor: deleting monitor", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteMonitor(ctx, id)
+	apiResp, err := r.client.Inner().DeleteMonitor(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Monitor", "Could not delete monitor "+id+": "+err.Error())
 		return
@@ -360,6 +493,69 @@ func (r *monitorResource) ImportState(ctx context.Context, req resource.ImportSt
 }
 
 // ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+// monitorSettings holds the optional monitor attributes shared by the create
+// and update requests.
+type monitorSettings struct {
+	Enabled               *bool
+	HeartbeatInterval     *string
+	HeartbeatGrace        *string
+	NoDataStatus          *api.MonitorStatus
+	NoDataMissedIntervals *int32
+	FaultThreshold        *int32
+	RecoveryThreshold     *int32
+	ConfirmationDelay     *string
+	FlappingThreshold     *int32
+	// Nulls lists the JSON names of the nullable attributes the plan leaves
+	// unset, which an update must send as explicit nulls to clear.
+	Nulls []string
+}
+
+// expandMonitorSettings reads the optional monitor attributes from the plan.
+func expandMonitorSettings(plan monitorResourceModel) monitorSettings {
+	var s monitorSettings
+
+	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() {
+		v := plan.Enabled.ValueBool()
+		s.Enabled = &v
+	}
+	s.FaultThreshold = int64ToInt32Ptr(plan.FaultThreshold)
+	s.RecoveryThreshold = int64ToInt32Ptr(plan.RecoveryThreshold)
+
+	optionalString := func(v types.String, name string) *string {
+		if v.IsUnknown() {
+			return nil
+		}
+		if v.IsNull() {
+			s.Nulls = append(s.Nulls, name)
+			return nil
+		}
+		str := v.ValueString()
+		return &str
+	}
+	optionalInt := func(v types.Int64, name string) *int32 {
+		if v.IsNull() && !v.IsUnknown() {
+			s.Nulls = append(s.Nulls, name)
+		}
+		return int64ToInt32Ptr(v)
+	}
+
+	s.HeartbeatInterval = optionalString(plan.HeartbeatInterval, "heartbeatInterval")
+	s.HeartbeatGrace = optionalString(plan.HeartbeatGrace, "heartbeatGrace")
+	if v := optionalString(plan.NoDataStatus, "noDataStatus"); v != nil {
+		st := api.MonitorStatus(*v)
+		s.NoDataStatus = &st
+	}
+	s.NoDataMissedIntervals = optionalInt(plan.NoDataMissedIntervals, "noDataMissedIntervals")
+	s.ConfirmationDelay = optionalString(plan.ConfirmationDelay, "confirmationDelay")
+	s.FlappingThreshold = optionalInt(plan.FlappingThreshold, "flappingThreshold")
+
+	return s
+}
+
+// ---------------------------------------------------------------------------
 // Relationship builders
 // ---------------------------------------------------------------------------
 
@@ -384,6 +580,19 @@ func buildCreateMonitorRelationships(ctx context.Context, plan monitorResourceMo
 		}
 	}
 
+	// label_ids — to-many
+	if !plan.LabelIDs.IsNull() && !plan.LabelIDs.IsUnknown() {
+		ids, d := stringListToSlice(ctx, plan.LabelIDs)
+		diags.Append(d...)
+		if !d.HasError() {
+			data := make([]api.LabelIdentifierInRequest, len(ids))
+			for i, id := range ids {
+				data[i] = api.LabelIdentifierInRequest{Id: id, Type: api.ResourceTypeLabels}
+			}
+			rels.Labels = &api.ToManyLabelInRequest{Data: data}
+		}
+	}
+
 	return rels, diags
 }
 
@@ -405,6 +614,19 @@ func buildUpdateMonitorRelationships(ctx context.Context, plan monitorResourceMo
 				data[i] = api.ComponentIdentifierInRequest{Id: id, Type: api.ResourceTypeComponents}
 			}
 			rels.Components = &api.ToManyComponentInRequest{Data: data}
+		}
+	}
+
+	// label_ids — to-many
+	if !plan.LabelIDs.IsNull() && !plan.LabelIDs.IsUnknown() {
+		ids, d := stringListToSlice(ctx, plan.LabelIDs)
+		diags.Append(d...)
+		if !d.HasError() {
+			data := make([]api.LabelIdentifierInRequest, len(ids))
+			for i, id := range ids {
+				data[i] = api.LabelIdentifierInRequest{Id: id, Type: api.ResourceTypeLabels}
+			}
+			rels.Labels = &api.ToManyLabelInRequest{Data: data}
 		}
 	}
 
@@ -465,6 +687,39 @@ func flattenMonitor(ctx context.Context, data api.DataInMonitorResponse, model *
 		} else {
 			model.StatusExpirationDateTime = types.StringNull()
 		}
+
+		if attrs.Enabled != nil {
+			model.Enabled = types.BoolValue(*attrs.Enabled)
+		} else {
+			model.Enabled = types.BoolNull()
+		}
+
+		model.HeartbeatInterval = flattenTimeSpan(attrs.HeartbeatInterval, model.HeartbeatInterval)
+		model.HeartbeatGrace = flattenTimeSpan(attrs.HeartbeatGrace, model.HeartbeatGrace)
+		model.ConfirmationDelay = flattenTimeSpan(attrs.ConfirmationDelay, model.ConfirmationDelay)
+
+		if attrs.NoDataStatus != nil {
+			model.NoDataStatus = types.StringValue(string(*attrs.NoDataStatus))
+		} else {
+			model.NoDataStatus = types.StringNull()
+		}
+		model.NoDataMissedIntervals = int32PtrToInt64(attrs.NoDataMissedIntervals)
+		model.NoDataDeadlineDateTime = timePtrToString(attrs.NoDataDeadlineDateTime)
+		model.NoDataDateTime = timePtrToString(attrs.NoDataDateTime)
+
+		model.FaultThreshold = int32PtrToInt64(attrs.FaultThreshold)
+		model.RecoveryThreshold = int32PtrToInt64(attrs.RecoveryThreshold)
+
+		if attrs.PendingStatus != nil {
+			model.PendingStatus = types.StringValue(string(*attrs.PendingStatus))
+		} else {
+			model.PendingStatus = types.StringNull()
+		}
+		model.PendingStatusCount = int32PtrToInt64(attrs.PendingStatusCount)
+		model.PendingStatusDateTime = timePtrToString(attrs.PendingStatusDateTime)
+
+		model.FlappingThreshold = int32PtrToInt64(attrs.FlappingThreshold)
+		model.FlappingDateTime = timePtrToString(attrs.FlappingDateTime)
 	}
 
 	// component_ids — to-many. JSON:API responses from the Monotaur API often
@@ -488,6 +743,19 @@ func flattenMonitor(ctx context.Context, data api.DataInMonitorResponse, model *
 		model.ComponentIDs = types.ListValueMust(types.StringType, nil)
 	}
 
+	// label_ids — to-many, same handling as component_ids above.
+	if data.Relationships != nil && data.Relationships.Labels != nil && data.Relationships.Labels.Data != nil {
+		ids := make([]string, len(*data.Relationships.Labels.Data))
+		for i, item := range *data.Relationships.Labels.Data {
+			ids[i] = item.Id
+		}
+		list, d := types.ListValueFrom(ctx, types.StringType, ids)
+		diags.Append(d...)
+		model.LabelIDs = list
+	} else if model.LabelIDs.IsNull() || model.LabelIDs.IsUnknown() {
+		model.LabelIDs = types.ListValueMust(types.StringType, nil)
+	}
+
 	return diags
 }
 
@@ -503,6 +771,11 @@ type MonitorResourceModelForTest = monitorResourceModel
 // FlattenMonitorForTest exposes flattenMonitor for use in unit tests.
 func FlattenMonitorForTest(ctx context.Context, data api.DataInMonitorResponse, model *monitorResourceModel) diag.Diagnostics {
 	return flattenMonitor(ctx, data, model)
+}
+
+// ExpandMonitorSettingsForTest exposes expandMonitorSettings for use in unit tests.
+func ExpandMonitorSettingsForTest(plan monitorResourceModel) monitorSettings {
+	return expandMonitorSettings(plan)
 }
 
 // BuildCreateMonitorRelationshipsForTest exposes buildCreateMonitorRelationships for use in unit tests.

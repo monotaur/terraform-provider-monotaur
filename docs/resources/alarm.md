@@ -22,11 +22,12 @@ resource "monotaur_monitor" "api_health" {
 # calculations. Alarm start/end are optional; omitting end_date_time leaves
 # the alarm open until the API closes it.
 resource "monotaur_alarm" "scheduled_maintenance" {
-  monitor_id           = monotaur_monitor.api_health.id
-  start_date_time      = "2025-01-15T02:00:00Z"
-  end_date_time        = "2025-01-15T04:00:00Z"
+  monitor_id            = monotaur_monitor.api_health.id
+  start_date_time       = "2025-01-15T02:00:00Z"
+  end_date_time         = "2025-01-15T04:00:00Z"
   exclude_from_downtime = true
-  squelch              = true
+  squelch               = true
+  severity              = "Warning"
 }
 ```
 
@@ -41,11 +42,14 @@ resource "monotaur_alarm" "scheduled_maintenance" {
 
 - `end_date_time` (String) The RFC 3339 timestamp when the alarm ended.
 - `exclude_from_downtime` (Boolean) Whether this alarm is excluded from downtime calculations.
+- `severity` (String) How serious the alarm is: `Info`, `Warning`, `Error` or `Critical`. Defaults to `Critical`.
 - `squelch` (Boolean) Whether this alarm is squelched (suppressed from alerting).
 - `start_date_time` (String) The RFC 3339 timestamp when the alarm started.
 
 ### Read-Only
 
+- `acknowledged_at` (String) The RFC 3339 timestamp when the alarm was acknowledged; null until it is (system-managed, read-only).
+- `acknowledged_by` (String) The service account that acknowledged the alarm (system-managed, read-only).
 - `create_date_time` (String) The RFC 3339 timestamp when the alarm was created (assigned by the API).
 - `id` (String) The unique identifier of the alarm (assigned by the API).
 - `update_date_time` (String) The RFC 3339 timestamp when the alarm was last updated (assigned by the API).
