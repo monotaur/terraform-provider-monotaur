@@ -33,10 +33,10 @@ import (
 // TestAccMonotaurRole_basic: full lifecycle
 //
 // Steps:
-//  1. Create with name, description = "initial", and permissions = ["read:monitors"].
+//  1. Create with name, description = "initial", and permissions = ["monitors:read"].
 //     Assert id, name, and permissions are set in state.
 //  2. Import by ID. Assert round-trip equality (ImportStateVerify).
-//  3. Update name, description, and permissions (add "read:labels"). Assert all
+//  3. Update name, description, and permissions (add "labels:read"). Assert all
 //     changed attributes land in state.
 //
 // Deletion is performed automatically by the test framework after all steps.
@@ -52,12 +52,12 @@ func TestAccMonotaurRole_basic(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Step 1: Create — verify all settable attributes are present in state.
 			{
-				Config: testAccRoleConfig(name, "initial", []string{"read:monitors"}),
+				Config: testAccRoleConfig(name, "initial", []string{"monitors:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_role.test", "id"),
 					resource.TestCheckResourceAttr("monotaur_role.test", "name", name),
 					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.#", "1"),
-					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "read:monitors"),
+					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "monitors:read"),
 				),
 			},
 			// Step 2: Import — verify round-trip equality of all state attributes.
@@ -69,7 +69,7 @@ func TestAccMonotaurRole_basic(t *testing.T) {
 			// Step 3: Update name, description, and permissions — verify all changes
 			// land in state.
 			{
-				Config: testAccRoleConfig(updatedName, "updated", []string{"read:monitors", "read:labels"}),
+				Config: testAccRoleConfig(updatedName, "updated", []string{"monitors:read", "labels:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_role.test", "name", updatedName),
 					resource.TestCheckResourceAttr("monotaur_role.test", "description", "updated"),
@@ -105,7 +105,7 @@ func TestAccMonotaurRole_drift(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Step 1: Create the role and capture its API-assigned ID.
 			{
-				Config: testAccRoleConfig(name, "drift test role", []string{"read:monitors"}),
+				Config: testAccRoleConfig(name, "drift test role", []string{"monitors:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_role.test", "id"),
 					func(s *terraform.State) error {
@@ -155,11 +155,11 @@ func TestAccMonotaurRole_drift(t *testing.T) {
 // TestAccMonotaurRole_permissionsCycle: add and remove permissions
 //
 // Steps:
-//  1. Create with permissions = ["read:monitors"]. Assert permissions.# = 1.
-//  2. Add "read:labels" → permissions = ["read:monitors", "read:labels"]. Assert
+//  1. Create with permissions = ["monitors:read"]. Assert permissions.# = 1.
+//  2. Add "labels:read" → permissions = ["monitors:read", "labels:read"]. Assert
 //     permissions.# = 2.
-//  3. Remove "read:monitors" → permissions = ["read:labels"]. Assert
-//     permissions.# = 1 and permissions.0 = "read:labels".
+//  3. Remove "monitors:read" → permissions = ["labels:read"]. Assert
+//     permissions.# = 1 and permissions.0 = "labels:read".
 //
 // Deletion is performed automatically by the test framework after all steps.
 // ---------------------------------------------------------------------------
@@ -173,27 +173,27 @@ func TestAccMonotaurRole_permissionsCycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Step 1: Create with one permission. Assert count and value.
 			{
-				Config: testAccRoleConfig(name, "permissions cycle test", []string{"read:monitors"}),
+				Config: testAccRoleConfig(name, "permissions cycle test", []string{"monitors:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrSet("monotaur_role.test", "id"),
 					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.#", "1"),
-					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "read:monitors"),
+					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "monitors:read"),
 				),
 			},
 			// Step 2: Add a second permission. Assert count increases to 2.
 			{
-				Config: testAccRoleConfig(name, "permissions cycle test", []string{"read:monitors", "read:labels"}),
+				Config: testAccRoleConfig(name, "permissions cycle test", []string{"monitors:read", "labels:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.#", "2"),
 				),
 			},
-			// Step 3: Remove the first permission, keeping only "read:labels". Assert
-			// count returns to 1 and the remaining permission is "read:labels".
+			// Step 3: Remove the first permission, keeping only "labels:read". Assert
+			// count returns to 1 and the remaining permission is "labels:read".
 			{
-				Config: testAccRoleConfig(name, "permissions cycle test", []string{"read:labels"}),
+				Config: testAccRoleConfig(name, "permissions cycle test", []string{"labels:read"}),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.#", "1"),
-					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "read:labels"),
+					resource.TestCheckResourceAttr("monotaur_role.test", "permissions.0", "labels:read"),
 				),
 			},
 		},

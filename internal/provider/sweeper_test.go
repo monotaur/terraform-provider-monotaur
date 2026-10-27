@@ -9,12 +9,12 @@
 // Dependency-safe deletion order (deepest first):
 //
 //	api_key → role_assignment → role → service_account →
+//	notification_escalation_step → notification_policy → notification_channel →
 //	monitor_status_rule → alarm → variable → secret →
 //	probe → sensor → monitor → component → label
 package provider_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -105,15 +105,13 @@ func (c *sweepClient) delete(ctx context.Context, path string) error {
 	return nil
 }
 
-// deleteWithBody performs an authenticated DELETE with a JSON body (used for
-// API key deletion via the service-account relationship endpoint).
-func (c *sweepClient) deleteWithBody(ctx context.Context, path string, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, bytes.NewReader(body))
+// post performs an authenticated POST without a body (used to revoke API keys,
+// which have no DELETE endpoint).
+func (c *sweepClient) post(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", jsonAPIContentType)
-	req.Header.Set("Accept", jsonAPIContentType)
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.http.Do(req)
@@ -124,7 +122,7 @@ func (c *sweepClient) deleteWithBody(ctx context.Context, path string, body []by
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE %s: HTTP %d: %s", path, resp.StatusCode, string(b))
+		return fmt.Errorf("POST %s: HTTP %d: %s", path, resp.StatusCode, string(b))
 	}
 	return nil
 }
@@ -143,7 +141,8 @@ type toOneRelationship struct {
 }
 
 type genericAttributes struct {
-	Name *string `json:"name,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	RevokedAt *string `json:"revokedAt,omitempty"`
 }
 
 type genericRelationships struct {
@@ -476,9 +475,9 @@ func sweepRoleAssignments(ctx context.Context, c *sweepClient, serviceAccountIDs
 	return deleted, nil
 }
 
-// sweepAPIKeys deletes API keys whose name starts with sweepPrefix. Because the
-// API does not expose DELETE /admin.apiKeys/{id}, each key is deleted via its
-// owning service account's relationship endpoint.
+// sweepAPIKeys revokes unrevoked API keys whose name starts with sweepPrefix.
+// The API has no DELETE for keys; revoked keys are removed with their service
+// account.
 func sweepAPIKeys(ctx context.Context, c *sweepClient) (int, error) {
 	var doc collectionDoc
 	if err := c.get(ctx, "/admin.apiKeys", &doc); err != nil {
@@ -495,33 +494,14 @@ func sweepAPIKeys(ctx context.Context, c *sweepClient) (int, error) {
 			continue
 		}
 
-		// Locate the owning service account from the relationship.
-		if res.Relationships == nil || res.Relationships.ServiceAccount == nil ||
-			res.Relationships.ServiceAccount.Data == nil {
-			log.Printf("[WARN] sweeper: api_key %s (%s) has no service account relationship — skipping",
-				name, res.ID)
+		if res.Attributes.RevokedAt != nil {
 			continue
 		}
-		saID := res.Relationships.ServiceAccount.Data.ID
-
-		// Build the DELETE relationship body.
-		body, err := json.Marshal(map[string]interface{}{
-			"data": []map[string]string{
-				{"id": res.ID, "type": "admin.apiKeys"},
-			},
-		})
-		if err != nil {
-			log.Printf("[WARN] sweeper: failed to marshal api_key deletion body for %s (%s): %v",
-				name, res.ID, err)
+		if err := c.post(ctx, "/admin.apiKeys/"+res.ID+"/revoke"); err != nil {
+			log.Printf("[WARN] sweeper: failed to revoke api_key %s (%s): %v", name, res.ID, err)
 			continue
 		}
-
-		path := fmt.Sprintf("/admin.serviceAccounts/%s/relationships/admin.apiKeys", saID)
-		if err := c.deleteWithBody(ctx, path, body); err != nil {
-			log.Printf("[WARN] sweeper: failed to delete api_key %s (%s): %v", name, res.ID, err)
-			continue
-		}
-		log.Printf("[INFO] sweeper: deleted api_key %s (%s)", name, res.ID)
+		log.Printf("[INFO] sweeper: revoked api_key %s (%s)", name, res.ID)
 		deleted++
 	}
 	return deleted, nil
@@ -585,6 +565,23 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 	// 4. Service accounts.
 	n, _, err = sweepServiceAccounts(ctx, c)
 	logStep("service_account", n, err)
+
+	// 4a. Notification escalation steps and policies. They must go before
+	//     labels and components, which a policy naming them keeps from being
+	//     deleted (409), and before the channels they reference.
+	policyIDs, listErr := sweepNotificationPolicyIDs(ctx, c)
+	if listErr != nil {
+		log.Printf("[WARN] sweeper: could not list notificationPolicies for escalation step cross-ref: %v", listErr)
+		policyIDs = make(map[string]struct{})
+	}
+	n, err = sweepNotificationEscalationSteps(ctx, c, policyIDs)
+	logStep("notification_escalation_step", n, err)
+	n, err = sweepNotificationPolicies(ctx, c)
+	logStep("notification_policy", n, err)
+
+	// 4b. Notification channels.
+	n, err = sweepNotificationChannels(ctx, c)
+	logStep("notification_channel", n, err)
 
 	// 5. Collect tfe2e- monitor IDs for child-resource sweepers.
 	var monDoc collectionDoc

@@ -49,6 +49,8 @@ type componentResourceModel struct {
 	Name                 types.String `tfsdk:"name"`
 	CreateDateTime       types.String `tfsdk:"create_date_time"`
 	UpdateDateTime       types.String `tfsdk:"update_date_time"`
+	Status               types.String `tfsdk:"status"`
+	StatusChangeDateTime types.String `tfsdk:"status_change_date_time"`
 	BusinessHoursID      types.String `tfsdk:"business_hours_id"`
 	LabelIDs             types.List   `tfsdk:"label_ids"`
 	MaintenanceWindowIDs types.List   `tfsdk:"maintenance_window_ids"`
@@ -85,6 +87,14 @@ func (r *componentResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"update_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the component was last updated (assigned by the API).",
+				Computed:            true,
+			},
+			"status": schema.StringAttribute{
+				MarkdownDescription: "The component's aggregated status (`Operational`, `Degraded` or `Nonoperational`): the worst status among its monitors, or `Nonoperational` during a maintenance window that applies to component status (system-managed, read-only).",
+				Computed:            true,
+			},
+			"status_change_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when `status` last changed; null until it first changes (system-managed, read-only).",
 				Computed:            true,
 			},
 			"business_hours_id": schema.StringAttribute{
@@ -323,7 +333,7 @@ func (r *componentResource) Delete(ctx context.Context, req resource.DeleteReque
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_component: deleting component", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteComponent(ctx, id)
+	apiResp, err := r.client.Inner().DeleteComponent(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Component", "Could not delete component "+id+": "+err.Error())
 		return
@@ -499,6 +509,13 @@ func flattenComponent(ctx context.Context, data api.DataInComponentResponse, mod
 		} else {
 			model.UpdateDateTime = types.StringNull()
 		}
+
+		if attrs.Status != nil {
+			model.Status = types.StringValue(string(*attrs.Status))
+		} else {
+			model.Status = types.StringNull()
+		}
+		model.StatusChangeDateTime = timePtrToString(attrs.StatusChangeDateTime)
 	}
 
 	// JSON:API responses from the Monotaur API often echo relationships with only

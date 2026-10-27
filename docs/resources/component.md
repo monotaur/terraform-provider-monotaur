@@ -42,4 +42,6 @@ resource "monotaur_component" "api_server" {
 
 - `create_date_time` (String) The RFC 3339 timestamp when the component was created (assigned by the API).
 - `id` (String) The unique identifier of the component (assigned by the API).
+- `status` (String) The component's aggregated status (`Operational`, `Degraded` or `Nonoperational`): the worst status among its monitors, or `Nonoperational` during a maintenance window that applies to component status (system-managed, read-only).
+- `status_change_date_time` (String) The RFC 3339 timestamp when `status` last changed; null until it first changes (system-managed, read-only).
 - `update_date_time` (String) The RFC 3339 timestamp when the component was last updated (assigned by the API).

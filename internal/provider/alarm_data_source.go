@@ -62,6 +62,18 @@ func (d *alarmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 				MarkdownDescription: "Whether this alarm is squelched (suppressed from alerting).",
 				Computed:            true,
 			},
+			"severity": schema.StringAttribute{
+				MarkdownDescription: "How serious the alarm is: `Info`, `Warning`, `Error` or `Critical`.",
+				Computed:            true,
+			},
+			"acknowledged_at": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the alarm was acknowledged; null until it is.",
+				Computed:            true,
+			},
+			"acknowledged_by": schema.StringAttribute{
+				MarkdownDescription: "The service account that acknowledged the alarm.",
+				Computed:            true,
+			},
 			"create_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the alarm was created.",
 				Computed:            true,

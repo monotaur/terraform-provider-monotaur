@@ -305,7 +305,7 @@ func (r *serviceAccountResource) Delete(ctx context.Context, req resource.Delete
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_service_account: deleting service account", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteAdminServiceAccount(ctx, id)
+	apiResp, err := r.client.Inner().DeleteAdminServiceAccount(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Service Account", "Could not delete service account "+id+": "+err.Error())
 		return

@@ -55,6 +55,10 @@ func (d *probeDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 				MarkdownDescription: "The schedule expression for the probe.",
 				Computed:            true,
 			},
+			"time_zone_id": schema.StringAttribute{
+				MarkdownDescription: "The IANA time zone `schedule` is evaluated in; null means UTC.",
+				Computed:            true,
+			},
 			"create_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the probe was created.",
 				Computed:            true,

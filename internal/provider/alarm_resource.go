@@ -41,20 +41,25 @@ type alarmResource struct {
 // Attribute mapping:
 //
 //	AttributesInCreateAlarmRequest:  startDateTime (optional), endDateTime (optional),
-//	                                  excludeFromDowntime (optional), squelch (optional)
+//	                                  excludeFromDowntime (optional), squelch (optional),
+//	                                  severity (optional)
 //	AttributesInAlarmResponse:       id (computed), startDateTime, endDateTime,
-//	                                  excludeFromDowntime, squelch,
+//	                                  excludeFromDowntime, squelch, severity,
+//	                                  acknowledgedAt (computed), acknowledgedBy (computed),
 //	                                  createDateTime (computed), updateDateTime (computed)
 //	RelationshipsIn*AlarmRequest:    monitor_id (to-one, required on create)
 type alarmResourceModel struct {
-	ID                 types.String `tfsdk:"id"`
-	StartDateTime      types.String `tfsdk:"start_date_time"`
-	EndDateTime        types.String `tfsdk:"end_date_time"`
-	ExcludeFromDowntime types.Bool  `tfsdk:"exclude_from_downtime"`
-	Squelch            types.Bool   `tfsdk:"squelch"`
-	CreateDateTime     types.String `tfsdk:"create_date_time"`
-	UpdateDateTime     types.String `tfsdk:"update_date_time"`
-	MonitorID          types.String `tfsdk:"monitor_id"`
+	ID                  types.String `tfsdk:"id"`
+	StartDateTime       types.String `tfsdk:"start_date_time"`
+	EndDateTime         types.String `tfsdk:"end_date_time"`
+	ExcludeFromDowntime types.Bool   `tfsdk:"exclude_from_downtime"`
+	Squelch             types.Bool   `tfsdk:"squelch"`
+	Severity            types.String `tfsdk:"severity"`
+	AcknowledgedAt      types.String `tfsdk:"acknowledged_at"`
+	AcknowledgedBy      types.String `tfsdk:"acknowledged_by"`
+	CreateDateTime      types.String `tfsdk:"create_date_time"`
+	UpdateDateTime      types.String `tfsdk:"update_date_time"`
+	MonitorID           types.String `tfsdk:"monitor_id"`
 }
 
 // Metadata sets the resource type name.
@@ -105,6 +110,22 @@ func (r *alarmResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"severity": schema.StringAttribute{
+				MarkdownDescription: "How serious the alarm is: `Info`, `Warning`, `Error` or `Critical`. Defaults to `Critical`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"acknowledged_at": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the alarm was acknowledged; null until it is (system-managed, read-only).",
+				Computed:            true,
+			},
+			"acknowledged_by": schema.StringAttribute{
+				MarkdownDescription: "The service account that acknowledged the alarm (system-managed, read-only).",
+				Computed:            true,
 			},
 			"create_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the alarm was created (assigned by the API).",
@@ -181,6 +202,10 @@ func (r *alarmResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if !plan.Squelch.IsNull() && !plan.Squelch.IsUnknown() {
 		v := plan.Squelch.ValueBool()
 		attrs.Squelch = &v
+	}
+	if !plan.Severity.IsNull() && !plan.Severity.IsUnknown() {
+		v := api.AlarmSeverity(plan.Severity.ValueString())
+		attrs.Severity = &v
 	}
 
 	rels, diags := buildCreateAlarmRelationships(ctx, plan)
@@ -315,6 +340,10 @@ func (r *alarmResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if !plan.Squelch.IsNull() && !plan.Squelch.IsUnknown() {
 		v := plan.Squelch.ValueBool()
 		attrs.Squelch = &v
+	}
+	if !plan.Severity.IsNull() && !plan.Severity.IsUnknown() {
+		v := api.AlarmSeverity(plan.Severity.ValueString())
+		attrs.Severity = &v
 	}
 
 	rels, diags := buildUpdateAlarmRelationships(ctx, plan)
@@ -481,6 +510,18 @@ func flattenAlarm(_ context.Context, data api.DataInAlarmResponse, model *alarmR
 			model.Squelch = types.BoolValue(*attrs.Squelch)
 		} else {
 			model.Squelch = types.BoolNull()
+		}
+
+		if attrs.Severity != nil {
+			model.Severity = types.StringValue(string(*attrs.Severity))
+		} else {
+			model.Severity = types.StringNull()
+		}
+		model.AcknowledgedAt = timePtrToString(attrs.AcknowledgedAt)
+		if attrs.AcknowledgedBy != nil {
+			model.AcknowledgedBy = types.StringValue(*attrs.AcknowledgedBy)
+		} else {
+			model.AcknowledgedBy = types.StringNull()
 		}
 
 		if attrs.CreateDateTime != nil {

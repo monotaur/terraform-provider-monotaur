@@ -33,4 +33,6 @@ data "monotaur_component" "api_server" {
 - `maintenance_window_ids` (List of String) IDs of maintenance windows associated with this component.
 - `monitor_ids` (List of String) IDs of monitors associated with this component.
 - `name` (String) The display name of the component.
+- `status` (String) The component's aggregated status (`Operational`, `Degraded` or `Nonoperational`).
+- `status_change_date_time` (String) The RFC 3339 timestamp when `status` last changed.
 - `update_date_time` (String) The RFC 3339 timestamp when the component was last updated.

@@ -325,7 +325,7 @@ func (r *variableResource) Delete(ctx context.Context, req resource.DeleteReques
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_variable: deleting variable", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteVariable(ctx, id)
+	apiResp, err := r.client.Inner().DeleteVariable(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Variable", "Could not delete variable "+id+": "+err.Error())
 		return

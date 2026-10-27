@@ -89,7 +89,7 @@ func (r *labelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"icon": schema.StringAttribute{
-				MarkdownDescription: "Optional icon for the label. Must be a single Unicode Extended Pictographic codepoint (an emoji), e.g. `🚩`.",
+				MarkdownDescription: "Optional icon for the label, at most 16 characters (e.g. an emoji such as `🚩`).",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -373,7 +373,7 @@ func (r *labelResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_label: deleting label", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteLabel(ctx, id)
+	apiResp, err := r.client.Inner().DeleteLabel(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Label", "Could not delete label "+id+": "+err.Error())
 		return
