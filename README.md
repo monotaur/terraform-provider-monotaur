@@ -154,8 +154,10 @@ kubectl -n monotaur create secret generic monotaur-postgres \
 kubectl -n monotaur create secret generic monotaur-redis \
   --from-literal=connection-string='rd-redis-master:6379'
 
+# The Worker needs a well-formed key: mtr_<live|test>_<8 base32>_<40 base32>.
+random() { tr -dc 'a-z2-7' < /dev/urandom | head -c "$1"; }
 kubectl -n monotaur create secret generic monotaur-api-keys \
-  --from-literal=monotaur-worker=ci-dummy-worker-key
+  --from-literal=monotaur-worker="mtr_live_$(random 8)_$(random 40)"
 
 kubectl -n monotaur create secret docker-registry ghcr-pull \
   --docker-server=ghcr.io \
