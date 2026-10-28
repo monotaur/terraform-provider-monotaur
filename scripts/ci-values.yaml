@@ -1,23 +1,35 @@
 # Helm values overlay used by .github/workflows/e2e.yml when installing the
-# Monotaur chart into the ephemeral KIND cluster. Mirrors the shape of the
-# chart's own ci/ct-values.yaml: latest image tag, GHCR pull secret, worker
-# subchart disabled (the worker image is not actually published yet, so
-# enabling it would just spin up a second Core silo).
+# Monotaur chart (oci://ghcr.io/monotaur/charts/monotaur) into the ephemeral
+# KIND cluster.
+#
+# Connection strings come from the `monotaur-secrets` Secret the workflow
+# creates (the chart's default `existingSecret`). The chart generates the
+# Worker's pre-shared API key itself (clientKeys), so the Worker can
+# authenticate to Core and host the probe grains that probe creates and
+# monitor deletes call into.
 
-monotaur-core:
-  image:
-    tag: latest
-    pullPolicy: Always    
-  imagePullSecrets:
-    - name: ghcr-pull
+image:
+  # Track main, like the provider: the E2E suite covers API features that may
+  # not be in a tagged release yet.
+  tag: latest
+  pullPolicy: Always
 
-monotaur-worker:
-  install: true
-  image:
-    tag: latest
-    pullPolicy: Always    
-  imagePullSecrets:
-    - name: ghcr-pull  
+imagePullSecrets:
+  - name: ghcr-pull
 
-monotaur-dev-tools:
-  install: false
+# One replica each keeps the KIND node within the runner's CPU and memory.
+core:
+  replicaCount: 1
+  pdb:
+    enabled: false
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+
+worker:
+  replicaCount: 1
+  pdb:
+    enabled: false
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}

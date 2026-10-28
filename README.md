@@ -100,12 +100,13 @@ The E2E suite needs a running Monotaur API at `MONOTAUR_ENDPOINT` plus a
 write-scoped `MONOTAUR_API_KEY`. If you have an existing instance you can
 reach, just export those two variables and run `make e2e`. Otherwise the
 recommended local setup is a [KIND](https://kind.sigs.k8s.io/) cluster with the
-[monotaur-chart](https://github.com/monotaur/monotaur-chart) installed —
+Monotaur Helm chart (`oci://ghcr.io/monotaur/charts/monotaur`) installed —
 exactly what nightly CI does (see `.github/workflows/e2e.yml`).
 
 ### Prerequisites
 
-- [`kind`](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+- [`kind`](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) with Kubernetes 1.30+
+  (the chart's minimum)
 - [`helm`](https://helm.sh/docs/intro/install/) v3.17+
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/)
 - A GitHub personal access token with `read:packages` scope (the Monotaur
@@ -124,8 +125,8 @@ kubectl create namespace monotaur
 
 ### 2. Install Postgres and Redis
 
-The Monotaur chart consumes pre-existing connection-string Secrets, so the DB
-and cache go in first:
+The Monotaur chart reads its connection strings from a pre-existing Secret,
+so the DB and cache go in first:
 
 ```bash
 helm install pg oci://registry-1.docker.io/bitnamicharts/postgresql \
@@ -148,14 +149,10 @@ helm install rd oci://registry-1.docker.io/bitnamicharts/redis \
 ### 3. Create the prerequisite Secrets
 
 ```bash
-kubectl -n monotaur create secret generic monotaur-postgres \
-  --from-literal=connection-string='Host=pg-postgresql;Port=5432;Database=monotaur;Username=monotaur;Password=testpassword123'
-
-kubectl -n monotaur create secret generic monotaur-redis \
-  --from-literal=connection-string='rd-redis-master:6379'
-
-kubectl -n monotaur create secret generic monotaur-api-keys \
-  --from-literal=monotaur-worker=ci-dummy-worker-key
+kubectl -n monotaur create secret generic monotaur-secrets \
+  --from-literal=ConnectionStrings__postgresql-db='Host=pg-postgresql;Port=5432;Database=monotaur;Username=monotaur;Password=testpassword123' \
+  --from-literal=ConnectionStrings__redis='rd-redis-master:6379' \
+  --from-literal=Auth__Enabled='true'
 
 kubectl -n monotaur create secret docker-registry ghcr-pull \
   --docker-server=ghcr.io \
@@ -171,14 +168,15 @@ The chart itself is also private, so authenticate Helm to GHCR before pulling:
 echo "$GHCR_TOKEN" | helm registry login ghcr.io \
   --username "$GHCR_USERNAME" --password-stdin
 
-helm install monotaur oci://ghcr.io/monotaur/charts/monotaur-chart \
+helm install monotaur oci://ghcr.io/monotaur/charts/monotaur \
   -n monotaur \
   --values scripts/ci-values.yaml \
   --wait --timeout 10m
 ```
 
-`scripts/ci-values.yaml` pins the image tag, wires the `ghcr-pull` imagePullSecret,
-and disables the worker subchart. Same overlay CI uses.
+`scripts/ci-values.yaml` tracks the `latest` images, wires the `ghcr-pull`
+imagePullSecret, and runs one Core and one Worker replica. The chart generates
+the Worker's API key itself. Same overlay CI uses.
 
 ### 5. Extract the bootstrap API key
 
@@ -195,7 +193,7 @@ export MONOTAUR_API_KEY=$(kubectl -n monotaur get secret monotaur-bootstrap-cred
 ### 6. Port-forward and run the suite
 
 ```bash
-kubectl -n monotaur port-forward svc/monotaur-monotaur-core 5000:5000 &
+kubectl -n monotaur port-forward svc/monotaur-core 5000:80 &
 export MONOTAUR_ENDPOINT=http://127.0.0.1:5000
 
 make e2e
