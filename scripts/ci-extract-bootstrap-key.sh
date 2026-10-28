@@ -8,14 +8,14 @@
 #   SECRET      Bootstrap secret name                (default: monotaur-bootstrap-credentials)
 #   DATA_KEY    Key inside the secret's data map    (default: bootstrap.key)
 #   TIMEOUT     Seconds to wait for the secret       (default: 300)
-#   DEPLOYMENT  Deployment to tail on timeout        (default: monotaur-core)
+#   DEPLOYMENT  Deployment to tail on timeout        (default: monotaur-monotaur-core)
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-monotaur}"
 SECRET="${SECRET:-monotaur-bootstrap-credentials}"
 DATA_KEY="${DATA_KEY:-bootstrap.key}"
 TIMEOUT="${TIMEOUT:-300}"
-DEPLOYMENT="${DEPLOYMENT:-monotaur-core}"
+DEPLOYMENT="${DEPLOYMENT:-monotaur-monotaur-core}"
 
 echo "Waiting up to ${TIMEOUT}s for secret ${SECRET} in ns ${NAMESPACE}..."
 

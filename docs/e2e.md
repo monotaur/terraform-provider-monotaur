@@ -39,7 +39,7 @@ works:
 
 - A shared staging environment, if your team runs one — contact them for the
   endpoint and a write-scoped API key.
-- A local install of the Monotaur Helm chart (`oci://ghcr.io/monotaur/charts/monotaur`)
+- A local install via the [monotaur-chart](https://github.com/monotaur/monotaur-chart)
   on KIND/minikube, port-forwarded to `localhost`. This is what CI does — see
   `.github/workflows/e2e.yml` for the exact sequence.
 - Any other instance you can reach over the network, provided the API key has
@@ -233,17 +233,15 @@ the GitHub Actions runner. Each run:
 
 1. Starts a fresh KIND cluster.
 2. Installs Bitnami `postgresql` and `redis` charts (persistence disabled).
-3. Creates the `monotaur-secrets` Secret the Monotaur chart consumes
-   (PostgreSQL and Redis connection strings, `Auth__Enabled`) plus a
-   `ghcr-pull` `imagePullSecrets` built from `${{ secrets.GHCR_PACKAGES_READ_TOKEN }}`.
-4. Installs the Monotaur chart from `oci://ghcr.io/monotaur/charts/monotaur`
-   with `scripts/ci-values.yaml`: one Core and one Worker replica on the `latest`
-   images. The chart generates the Worker's API key, so the Worker joins the
-   cluster and hosts the probe grains.
+3. Creates the prerequisite Secrets the Monotaur chart consumes
+   (`monotaur-postgres`, `monotaur-redis`, `monotaur-api-keys`) plus a
+   `ghcr-pull` `imagePullSecrets` built from `${{ secrets.GITHUB_TOKEN }}`.
+4. Installs the Monotaur chart from `oci://ghcr.io/monotaur/charts/monotaur-chart`
+   with `scripts/ci-values.yaml`.
 5. Waits for the `monotaur-bootstrap-credentials` Secret to appear and decodes
    its admin API key (`scripts/ci-extract-bootstrap-key.sh`).
-6. Background-runs `kubectl port-forward` from the `monotaur-core` Service
-   (port 80) to expose the Monotaur API on `http://127.0.0.1:5000`.
+6. Background-runs `kubectl port-forward` to expose the Monotaur API on
+   `http://127.0.0.1:5000`.
 7. Runs `make e2e` against that local endpoint.
 
 The same workflow also runs on `workflow_dispatch` and on pull requests labeled
