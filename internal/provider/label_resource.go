@@ -116,7 +116,7 @@ func (r *labelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:            true,
 			},
 			"calendar_event_ids": schema.ListAttribute{
-				MarkdownDescription: "IDs of calendar events associated with this label.",
+				MarkdownDescription: "IDs of calendar events associated with this label. Do not also manage the same links with `monotaur_calendar_event.label_ids`.",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
