@@ -3,6 +3,7 @@ package client_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -468,4 +469,108 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+// ---------------------------------------------------------------------------
+// MarshalWithNullAttributes
+// ---------------------------------------------------------------------------
+
+func TestMarshalWithNullAttributes_setsExplicitNulls(t *testing.T) {
+	name := "m"
+	doc := api.UpdateMonitorRequestDocument{
+		Data: api.DataInUpdateMonitorRequest{
+			Id:   "1",
+			Type: api.ResourceTypeMonitors,
+			Attributes: &api.AttributesInUpdateMonitorRequest{
+				OpenapiDiscriminator: api.ResourceTypeMonitors,
+				Name:                 &name,
+			},
+		},
+	}
+
+	r, err := client.MarshalWithNullAttributes(doc, []string{"heartbeatInterval", "flappingThreshold"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Data struct {
+			ID         string                     `json:"id"`
+			Type       string                     `json:"type"`
+			Attributes map[string]json.RawMessage `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(r).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Data.ID != "1" || got.Data.Type != "monitors" {
+		t.Errorf("id/type = %q/%q, want 1/monitors", got.Data.ID, got.Data.Type)
+	}
+	if string(got.Data.Attributes["name"]) != `"m"` {
+		t.Errorf("name = %s, want \"m\"", got.Data.Attributes["name"])
+	}
+	for _, k := range []string{"heartbeatInterval", "flappingThreshold"} {
+		v, ok := got.Data.Attributes[k]
+		if !ok || string(v) != "null" {
+			t.Errorf("%s = %s (present=%v), want explicit null", k, v, ok)
+		}
+	}
+	if _, ok := got.Data.Attributes["confirmationDelay"]; ok {
+		t.Error("confirmationDelay should be omitted")
+	}
+}
+
+func TestMarshalWithNullAttributes_noNullsMatchesPlainMarshal(t *testing.T) {
+	doc := api.UpdateMonitorRequestDocument{
+		Data: api.DataInUpdateMonitorRequest{Id: "1", Type: api.ResourceTypeMonitors},
+	}
+	r, err := client.MarshalWithNullAttributes(doc, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := io.ReadAll(r)
+	want, _ := json.Marshal(doc)
+	if string(got) != string(want) {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RevokeAdminApiKey
+// ---------------------------------------------------------------------------
+
+func TestRevokeAdminApiKey_postsToRevokeEndpoint(t *testing.T) {
+	var captured *http.Request
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     http.Header{},
+		}, nil
+	})
+
+	c, err := client.New(client.Config{
+		BaseURL:    "http://localhost/prefix",
+		APIKey:     "test-key",
+		HTTPClient: &http.Client{Transport: transport},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := c.RevokeAdminApiKey(context.Background(), "42")
+	if err != nil {
+		t.Fatalf("RevokeAdminApiKey: %v", err)
+	}
+	resp.Body.Close()
+
+	if captured.Method != http.MethodPost {
+		t.Errorf("method = %s, want POST", captured.Method)
+	}
+	if got := captured.URL.String(); got != "http://localhost/prefix/api/v1/admin.apiKeys/42/revoke" {
+		t.Errorf("URL = %s", got)
+	}
+	if got := captured.Header.Get("Authorization"); got != "Bearer test-key" {
+		t.Errorf("Authorization = %q", got)
+	}
 }

@@ -32,4 +32,5 @@ data "monotaur_probe" "http" {
 - `monitor_id` (String) The ID of the monitor this probe belongs to.
 - `schedule` (String) The schedule expression for the probe.
 - `sensor_ids` (List of String) IDs of sensors associated with this probe.
+- `time_zone_id` (String) The IANA time zone `schedule` is evaluated in; null means UTC.
 - `update_date_time` (String) The RFC 3339 timestamp when the probe was last updated.

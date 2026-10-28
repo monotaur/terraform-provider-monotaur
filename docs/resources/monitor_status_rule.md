@@ -21,8 +21,9 @@ resource "monotaur_monitor" "api_health" {
 resource "monotaur_monitor_status_rule" "degraded" {
   monitor_id     = monotaur_monitor.api_health.id
   predicate      = "latency > 500"
-  status         = "Degraded"
+  status         = "Warning"
   status_message = "Response time exceeds 500 ms"
+  priority       = 10
 }
 ```
 
@@ -36,6 +37,7 @@ resource "monotaur_monitor_status_rule" "degraded" {
 
 ### Optional
 
+- `priority` (Number) Orders rules that share a `status`: lower values are evaluated first, and rules with equal priority are evaluated in ID order. Rules are always evaluated from the most severe status down. Defaults to `0`.
 - `status` (String) The monitor status to apply when the predicate matches.
 - `status_message` (String) A message to accompany the status when the predicate matches.
 

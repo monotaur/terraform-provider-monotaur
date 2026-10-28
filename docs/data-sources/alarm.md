@@ -27,10 +27,13 @@ data "monotaur_alarm" "outage" {
 
 ### Read-Only
 
+- `acknowledged_at` (String) The RFC 3339 timestamp when the alarm was acknowledged; null until it is.
+- `acknowledged_by` (String) The service account that acknowledged the alarm.
 - `create_date_time` (String) The RFC 3339 timestamp when the alarm was created.
 - `end_date_time` (String) The RFC 3339 timestamp when the alarm ended.
 - `exclude_from_downtime` (Boolean) Whether this alarm is excluded from downtime calculations.
 - `monitor_id` (String) The ID of the monitor this alarm belongs to.
+- `severity` (String) How serious the alarm is: `Info`, `Warning`, `Error` or `Critical`.
 - `squelch` (Boolean) Whether this alarm is squelched (suppressed from alerting).
 - `start_date_time` (String) The RFC 3339 timestamp when the alarm started.
 - `update_date_time` (String) The RFC 3339 timestamp when the alarm was last updated.

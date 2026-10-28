@@ -4,12 +4,14 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/monotaur/terraform-provider-monotaur/internal/api"
@@ -82,6 +84,9 @@ type Config struct {
 //   - Typed error decoding from errorResponseDocument
 type Client struct {
 	inner api.ClientInterface
+	// raw is the same generated client as inner, kept concretely typed for
+	// endpoints the OpenAPI document leaves out (see RevokeAdminApiKey).
+	raw *api.Client
 }
 
 // New creates a new Client from the provided Config. It registers a request
@@ -132,7 +137,7 @@ func New(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("monotaur client: %w", err)
 	}
 
-	return &Client{inner: inner}, nil
+	return &Client{inner: inner, raw: inner}, nil
 }
 
 // headerInjector returns a RequestEditorFn that sets the Content-Type, Accept,
@@ -155,6 +160,32 @@ func headerInjector(apiKey string) api.RequestEditorFn {
 // with typed wrapper methods as resources are added, then unexport Inner.
 func (c *Client) Inner() api.ClientInterface {
 	return c.inner
+}
+
+// RevokeAdminApiKey revokes an API key via POST /api/v1/admin.apiKeys/{id}/revoke.
+// Revoking an already revoked key succeeds with 204. The endpoint is left out
+// of the OpenAPI document, so the generated client has no method for it; the
+// request goes through the same transport and request editors as generated
+// calls.
+func (c *Client) RevokeAdminApiKey(ctx context.Context, id string) (*http.Response, error) {
+	serverURL, err := url.Parse(c.raw.Server)
+	if err != nil {
+		return nil, fmt.Errorf("monotaur: parse server URL: %w", err)
+	}
+	queryURL, err := serverURL.Parse("./api/v1/admin.apiKeys/" + url.PathEscape(id) + "/revoke")
+	if err != nil {
+		return nil, fmt.Errorf("monotaur: build revoke URL: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("monotaur: build revoke request: %w", err)
+	}
+	for _, edit := range c.raw.RequestEditors {
+		if err := edit(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	return c.raw.Client.Do(req)
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +216,49 @@ func MarshalDocument[T any](resource T) ([]byte, error) {
 		return nil, fmt.Errorf("monotaur: marshal document: %w", err)
 	}
 	return b, nil
+}
+
+// MarshalWithNullAttributes JSON-encodes a generated request document and sets
+// each named attribute to an explicit JSON null under data.attributes. Use it
+// with the generated Patch<Name>WithBody methods to clear a nullable attribute:
+// the generated attribute structs tag every optional field omitempty, so a nil
+// pointer is left out of the body and JSON:API treats it as "no change".
+func MarshalWithNullAttributes(doc any, nullAttrs []string) (io.Reader, error) {
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("monotaur: marshal document: %w", err)
+	}
+	if len(nullAttrs) == 0 {
+		return bytes.NewReader(b), nil
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, fmt.Errorf("monotaur: decode document: %w", err)
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(raw["data"], &data); err != nil {
+		return nil, fmt.Errorf("monotaur: decode document data: %w", err)
+	}
+	attrs := map[string]json.RawMessage{}
+	if a, ok := data["attributes"]; ok && string(a) != "null" {
+		if err := json.Unmarshal(a, &attrs); err != nil {
+			return nil, fmt.Errorf("monotaur: decode document attributes: %w", err)
+		}
+	}
+	for _, name := range nullAttrs {
+		attrs[name] = json.RawMessage("null")
+	}
+	if data["attributes"], err = json.Marshal(attrs); err != nil {
+		return nil, fmt.Errorf("monotaur: encode document attributes: %w", err)
+	}
+	if raw["data"], err = json.Marshal(data); err != nil {
+		return nil, fmt.Errorf("monotaur: encode document data: %w", err)
+	}
+	if b, err = json.Marshal(raw); err != nil {
+		return nil, fmt.Errorf("monotaur: encode document: %w", err)
+	}
+	return bytes.NewReader(b), nil
 }
 
 // UnmarshalDocument decodes a JSON:API document envelope from r and returns

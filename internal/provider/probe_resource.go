@@ -43,11 +43,12 @@ type probeResource struct {
 //
 //	AttributesInCreateProbeRequest:  active (optional), schedule (optional)
 //	AttributesInProbeResponse:       id (computed), active, schedule, createDateTime (computed), updateDateTime (computed)
-//	RelationshipsIn*ProbeRequest:    monitor_id (to-one, required on create), sensor_ids (to-many, optional)
+//	RelationshipsIn*ProbeRequest:    monitor_id (to-one, required on create), sensor_ids (to-many, read-only)
 type probeResourceModel struct {
 	ID             types.String `tfsdk:"id"`
 	Active         types.Bool   `tfsdk:"active"`
 	Schedule       types.String `tfsdk:"schedule"`
+	TimeZoneID     types.String `tfsdk:"time_zone_id"`
 	CreateDateTime types.String `tfsdk:"create_date_time"`
 	UpdateDateTime types.String `tfsdk:"update_date_time"`
 	MonitorID      types.String `tfsdk:"monitor_id"`
@@ -87,6 +88,10 @@ func (r *probeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"time_zone_id": schema.StringAttribute{
+				MarkdownDescription: "The time zone `schedule` is evaluated in, as an IANA ID such as `Europe/Berlin` (Windows IDs are also accepted). Unset means UTC.",
+				Optional:            true,
+			},
 			"create_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the probe was created (assigned by the API).",
 				Computed:            true,
@@ -103,8 +108,7 @@ func (r *probeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Required:            true,
 			},
 			"sensor_ids": schema.ListAttribute{
-				MarkdownDescription: "IDs of sensors associated with this probe.",
-				Optional:            true,
+				MarkdownDescription: "IDs of sensors attached to this probe (read-only). Attach a sensor by setting `probe_id` on the `monotaur_sensor`; the API does not accept sensors on the probe.",
 				Computed:            true,
 				ElementType:         types.StringType,
 				PlanModifiers: []planmodifier.List{
@@ -153,6 +157,11 @@ func (r *probeResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if !plan.Schedule.IsNull() && !plan.Schedule.IsUnknown() {
 		s := plan.Schedule.ValueString()
 		attrs.Schedule = &s
+	}
+
+	if !plan.TimeZoneID.IsNull() && !plan.TimeZoneID.IsUnknown() {
+		tz := plan.TimeZoneID.ValueString()
+		attrs.TimeZoneId = &tz
 	}
 
 	rels, diags := buildCreateProbeRelationships(ctx, plan)
@@ -271,6 +280,11 @@ func (r *probeResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		attrs.Schedule = &s
 	}
 
+	if !plan.TimeZoneID.IsNull() && !plan.TimeZoneID.IsUnknown() {
+		tz := plan.TimeZoneID.ValueString()
+		attrs.TimeZoneId = &tz
+	}
+
 	rels, diags := buildUpdateProbeRelationships(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -286,9 +300,21 @@ func (r *probeResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		},
 	}
 
+	// A time zone removed from the configuration is sent as an explicit null
+	// so the API clears it; an omitted attribute would mean "no change".
+	var nulls []string
+	if plan.TimeZoneID.IsNull() {
+		nulls = append(nulls, "timeZoneId")
+	}
+	reqBody, err := client.MarshalWithNullAttributes(body, nulls)
+	if err != nil {
+		resp.Diagnostics.AddError("Error Updating Probe", "Could not encode request: "+err.Error())
+		return
+	}
+
 	tflog.Debug(ctx, "monotaur_probe: updating probe", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().PatchProbeWithApplicationVndAPIPlusJSONExtOpenapiBody(ctx, id, &api.PatchProbeParams{}, body)
+	apiResp, err := r.client.Inner().PatchProbeWithBody(ctx, id, &api.PatchProbeParams{}, client.ContentType, reqBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Probe", "Could not update probe "+id+": "+err.Error())
 		return
@@ -335,7 +361,7 @@ func (r *probeResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_probe: deleting probe", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteProbe(ctx, id)
+	apiResp, err := r.client.Inner().DeleteProbe(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Probe", "Could not delete probe "+id+": "+err.Error())
 		return
@@ -363,7 +389,7 @@ func (r *probeResource) ImportState(ctx context.Context, req resource.ImportStat
 
 // buildCreateProbeRelationships converts the plan's relationship ID fields
 // into the API request type for create operations.
-func buildCreateProbeRelationships(ctx context.Context, plan probeResourceModel) (*api.RelationshipsInCreateProbeRequest, diag.Diagnostics) {
+func buildCreateProbeRelationships(_ context.Context, plan probeResourceModel) (*api.RelationshipsInCreateProbeRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	rels := &api.RelationshipsInCreateProbeRequest{
@@ -376,25 +402,12 @@ func buildCreateProbeRelationships(ctx context.Context, plan probeResourceModel)
 		},
 	}
 
-	// sensor_ids — to-many
-	if !plan.SensorIDs.IsNull() && !plan.SensorIDs.IsUnknown() {
-		ids, d := stringListToSlice(ctx, plan.SensorIDs)
-		diags.Append(d...)
-		if !d.HasError() {
-			data := make([]api.SensorIdentifierInRequest, len(ids))
-			for i, id := range ids {
-				data[i] = api.SensorIdentifierInRequest{Id: id, Type: api.ResourceTypeSensors}
-			}
-			rels.Sensors = &api.ToManySensorInRequest{Data: data}
-		}
-	}
-
 	return rels, diags
 }
 
 // buildUpdateProbeRelationships converts the plan's relationship ID fields
 // into the API request type for update operations.
-func buildUpdateProbeRelationships(ctx context.Context, plan probeResourceModel) (*api.RelationshipsInUpdateProbeRequest, diag.Diagnostics) {
+func buildUpdateProbeRelationships(_ context.Context, plan probeResourceModel) (*api.RelationshipsInUpdateProbeRequest, diag.Diagnostics) {
 	rels := &api.RelationshipsInUpdateProbeRequest{
 		OpenapiDiscriminator: api.ResourceTypeProbes,
 	}
@@ -407,19 +420,6 @@ func buildUpdateProbeRelationships(ctx context.Context, plan probeResourceModel)
 				Id:   plan.MonitorID.ValueString(),
 				Type: api.ResourceTypeMonitors,
 			},
-		}
-	}
-
-	// sensor_ids — to-many
-	if !plan.SensorIDs.IsNull() && !plan.SensorIDs.IsUnknown() {
-		ids, d := stringListToSlice(ctx, plan.SensorIDs)
-		diags.Append(d...)
-		if !d.HasError() {
-			data := make([]api.SensorIdentifierInRequest, len(ids))
-			for i, id := range ids {
-				data[i] = api.SensorIdentifierInRequest{Id: id, Type: api.ResourceTypeSensors}
-			}
-			rels.Sensors = &api.ToManySensorInRequest{Data: data}
 		}
 	}
 
@@ -449,6 +449,12 @@ func flattenProbe(ctx context.Context, data api.DataInProbeResponse, model *prob
 			model.Schedule = types.StringValue(*attrs.Schedule)
 		} else {
 			model.Schedule = types.StringNull()
+		}
+
+		if attrs.TimeZoneId != nil && *attrs.TimeZoneId != "" {
+			model.TimeZoneID = types.StringValue(*attrs.TimeZoneId)
+		} else {
+			model.TimeZoneID = types.StringNull()
 		}
 
 		if attrs.CreateDateTime != nil {

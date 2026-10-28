@@ -9,7 +9,7 @@ package provider_test
 // Covered acceptance criteria:
 //   - Full lifecycle: create → import → update (active + schedule) → delete
 //   - Drift detection: out-of-band PATCH on active attribute, plan detects non-empty diff
-//   - sensor_ids cycling: start with 2 sensors, remove 1, add it back
+//   - sensor_ids is read-only: populated from sensors that point at the probe
 //   - All resource names use acctest.Name() for collision-safe, sweepable identifiers
 //   - No assumptions about an empty backend (pre-existing resources are ignored)
 
@@ -154,24 +154,18 @@ func TestAccMonotaurProbe_drift(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestAccMonotaurProbe_sensorIDs: sensor_ids cycling
+// TestAccMonotaurProbe_sensorIDs: read-only sensor_ids
 //
-// The Monotaur schema exposes the probe<->sensor relationship from both sides
-// (probe.sensor_ids and sensor.probe_id are both writable). In HCL, having
-// both probe.sensor_ids = [monotaur_sensor.s1.id] AND sensor.probe_id =
-// monotaur_probe.test.id creates an unresolvable graph cycle. To exercise the
-// probe.sensor_ids PATCH path without that cycle, this test pre-creates the
-// entire parent chain (label, component, monitor, probe) AND the sensors via
-// raw API helpers, then has Terraform manage only the probe via `terraform
-// import`. The sensors live outside Terraform's graph, so probe.sensor_ids
-// can reference their IDs as plain strings.
+// sensor_ids is read-only: sensors attach to a probe through their own
+// probe_id, and the API rejects assigning them on the probe. This test
+// pre-creates the parent chain and two sensors via raw API helpers, imports
+// the probe, and checks that sensor_ids reflects the attached sensors and that
+// an update of the probe (which must not send sensors) succeeds.
 //
 // Steps:
-//  1. Import the pre-created probe. Verify sensor_ids was auto-populated to
-//     [s1, s2] by the API (the sensors point at the probe via probe_id).
-//  2. Apply config with explicit sensor_ids = [s1]. PATCH must reduce the
-//     probe's sensor list to [s1]. Note: the API cascade-deletes the unlinked
-//     sensor (s2), so the test cannot re-add it in a later step.
+//  1. Import the pre-created probe. Verify sensor_ids holds both sensors.
+//  2. Change the probe's schedule. The update must succeed and keep both
+//     sensors attached.
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurProbe_sensorIDs(t *testing.T) {
@@ -216,10 +210,7 @@ func TestAccMonotaurProbe_sensorIDs(t *testing.T) {
 	}
 	defer s1Cleanup()
 
-	// s2 has no ID variable: it's referenced only by the auto-population check
-	// after import. Step 2 explicitly drops it, and the API cascade-deletes it
-	// when unlinked, so the cleanup below tolerates a 404.
-	_, s2Cleanup, err := createSensor(probeID, sensor2Name)
+	s2ID, s2Cleanup, err := createSensor(probeID, sensor2Name)
 	if err != nil {
 		t.Fatalf("createSensor s2: %v", err)
 	}
@@ -230,12 +221,12 @@ resource "monotaur_probe" "test" {
   monitor_id = %q
 }
 `, monitorID)
-	configOneSensorID := fmt.Sprintf(`
+	configSchedule := fmt.Sprintf(`
 resource "monotaur_probe" "test" {
   monitor_id = %q
-  sensor_ids = [%q]
+  schedule   = "*/15 * * * *"
 }
-`, monitorID, s1ID)
+`, monitorID)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -257,13 +248,14 @@ resource "monotaur_probe" "test" {
 					return nil
 				},
 			},
-			// Step 2: Explicit sensor_ids = [s1] — PATCH reduces the probe's
-			// sensor list and the API cascade-deletes the unlinked s2.
+			// Step 2: Update the probe; sensors must stay attached.
 			{
-				Config: configOneSensorID,
+				Config: configSchedule,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "1"),
-					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.0", s1ID),
+					resource.TestCheckResourceAttr("monotaur_probe.test", "schedule", "*/15 * * * *"),
+					resource.TestCheckResourceAttr("monotaur_probe.test", "sensor_ids.#", "2"),
+					resource.TestCheckTypeSetElemAttr("monotaur_probe.test", "sensor_ids.*", s1ID),
+					resource.TestCheckTypeSetElemAttr("monotaur_probe.test", "sensor_ids.*", s2ID),
 				),
 			},
 		},
