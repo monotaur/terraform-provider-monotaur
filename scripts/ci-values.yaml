@@ -1,8 +1,8 @@
 # Helm values overlay used by .github/workflows/e2e.yml when installing the
 # Monotaur chart into the ephemeral KIND cluster. Mirrors the shape of the
-# chart's own ci/ct-values.yaml: latest image tag, GHCR pull secret, worker
-# subchart disabled (the worker image is not actually published yet, so
-# enabling it would just spin up a second Core silo).
+# chart's own ci/ct-values.yaml: latest image tag and GHCR pull secret, plus
+# the Core and Worker settings below that let the Worker authenticate to Core
+# and host the probe grains.
 
 monotaur-core:
   image:
@@ -10,6 +10,16 @@ monotaur-core:
     pullPolicy: Always    
   imagePullSecrets:
     - name: ghcr-pull
+  # The chart hands the Worker its pre-shared key (Monotaur__ApiClient__ApiKey)
+  # but never gives it to Core, so Core rejects the Worker and probe grains have
+  # no host. Import it as the monotaur-worker bootstrap account, which is index 0
+  # of Auth:BootstrapAccounts in Monotaur's appsettings.json.
+  env:
+    - name: Auth__BootstrapAccounts__0__ApiKey
+      valueFrom:
+        secretKeyRef:
+          name: monotaur-api-keys
+          key: monotaur-worker
 
 monotaur-worker:
   install: true
@@ -18,6 +28,11 @@ monotaur-worker:
     pullPolicy: Always    
   imagePullSecrets:
     - name: ghcr-pull  
+  # The Worker validates at startup that its API client has an absolute Core
+  # address; the chart only sets the Aspire-style services__ variables.
+  env:
+    - name: Monotaur__ApiClient__BaseAddress
+      value: http://monotaur-monotaur-core:5000
 
 monotaur-dev-tools:
   install: false
