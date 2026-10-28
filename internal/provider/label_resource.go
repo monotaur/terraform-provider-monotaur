@@ -309,7 +309,13 @@ func (r *labelResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		attrs.Icon = &v
 	}
 
-	rels, diags := buildUpdateLabelRelationships(ctx, plan)
+	var config labelResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	rels, diags := buildUpdateLabelRelationships(ctx, configuredLabelRelationships(plan, config))
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -444,6 +450,24 @@ func buildCreateLabelRelationships(ctx context.Context, plan labelResourceModel)
 	}
 
 	return rels, diags
+}
+
+// configuredLabelRelationships returns plan with the to-many relationship
+// lists the configuration leaves out set to null, so the update request omits
+// them. An unconfigured Optional+Computed list plans as its prior state, and
+// sending it would replace links made elsewhere, such as
+// monotaur_monitor.label_ids or monotaur_component.label_ids.
+func configuredLabelRelationships(plan, config labelResourceModel) labelResourceModel {
+	if config.CalendarEventIDs.IsNull() {
+		plan.CalendarEventIDs = types.ListNull(types.StringType)
+	}
+	if config.ComponentIDs.IsNull() {
+		plan.ComponentIDs = types.ListNull(types.StringType)
+	}
+	if config.MonitorIDs.IsNull() {
+		plan.MonitorIDs = types.ListNull(types.StringType)
+	}
+	return plan
 }
 
 // buildUpdateLabelRelationships converts the plan's relationship ID lists into
@@ -613,6 +637,11 @@ func stringListToSlice(ctx context.Context, list types.List) ([]string, diag.Dia
 // unit tests in the provider_test package to use the same struct layout
 // without embedding framework internals.
 type LabelResourceModelForTest = labelResourceModel
+
+// ConfiguredLabelRelationshipsForTest exposes configuredLabelRelationships for use in unit tests.
+func ConfiguredLabelRelationshipsForTest(plan, config labelResourceModel) labelResourceModel {
+	return configuredLabelRelationships(plan, config)
+}
 
 // FlattenLabelForTest exposes flattenLabel for use in unit tests.
 func FlattenLabelForTest(ctx context.Context, data api.DataInLabelResponse, model *labelResourceModel) diag.Diagnostics {

@@ -269,7 +269,13 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 		Name:                 &nameVal,
 	}
 
-	rels, diags := buildUpdateComponentRelationships(ctx, plan)
+	var config componentResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	rels, diags := buildUpdateComponentRelationships(ctx, configuredComponentRelationships(plan, config))
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -418,6 +424,25 @@ func buildCreateComponentRelationships(ctx context.Context, plan componentResour
 	}
 
 	return rels, diags
+}
+
+// configuredComponentRelationships returns plan with the to-many relationship
+// lists the configuration leaves out set to null, so the update request omits
+// them. An unconfigured Optional+Computed list plans as its prior state, and
+// sending it would replace links made elsewhere: a maintenance schedule links
+// its generated windows to its components, and monotaur_monitor.component_ids
+// links monitors.
+func configuredComponentRelationships(plan, config componentResourceModel) componentResourceModel {
+	if config.LabelIDs.IsNull() {
+		plan.LabelIDs = types.ListNull(types.StringType)
+	}
+	if config.MaintenanceWindowIDs.IsNull() {
+		plan.MaintenanceWindowIDs = types.ListNull(types.StringType)
+	}
+	if config.MonitorIDs.IsNull() {
+		plan.MonitorIDs = types.ListNull(types.StringType)
+	}
+	return plan
 }
 
 // buildUpdateComponentRelationships converts the plan's relationship ID fields
@@ -584,6 +609,11 @@ func flattenComponent(ctx context.Context, data api.DataInComponentResponse, mod
 // allows unit tests in the provider_test package to use the same struct layout
 // without embedding framework internals.
 type ComponentResourceModelForTest = componentResourceModel
+
+// ConfiguredComponentRelationshipsForTest exposes configuredComponentRelationships for use in unit tests.
+func ConfiguredComponentRelationshipsForTest(plan, config componentResourceModel) componentResourceModel {
+	return configuredComponentRelationships(plan, config)
+}
 
 // FlattenComponentForTest exposes flattenComponent for use in unit tests.
 func FlattenComponentForTest(ctx context.Context, data api.DataInComponentResponse, model *componentResourceModel) diag.Diagnostics {

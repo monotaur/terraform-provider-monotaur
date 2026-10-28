@@ -40,7 +40,7 @@ resource "monotaur_probe" "http" {
 
 - `active` (Boolean) Whether the probe is active.
 - `schedule` (String) The schedule expression for the probe (e.g. a cron expression).
-- `time_zone_id` (String) The time zone `schedule` is evaluated in, as an IANA ID such as `Europe/Berlin`. Unset means UTC. Use an IANA ID: the API converts Windows IDs, which would show as a change on the next plan.
+- `time_zone_id` (String) The time zone `schedule` is evaluated in, as an IANA ID such as `Europe/Berlin` (Windows IDs are also accepted). Unset means UTC.
 
 ### Read-Only
 
