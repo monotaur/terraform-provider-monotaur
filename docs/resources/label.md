@@ -29,7 +29,7 @@ resource "monotaur_label" "production" {
 
 ### Optional
 
-- `calendar_event_ids` (List of String) IDs of calendar events associated with this label.
+- `calendar_event_ids` (List of String) IDs of calendar events associated with this label. Do not also manage the same links with `monotaur_calendar_event.label_ids`.
 - `color` (String) Optional hex colour code for the label (e.g. `#FF5733`).
 - `component_ids` (List of String) IDs of components associated with this label.
 - `icon` (String) Optional icon for the label, at most 16 characters (e.g. an emoji such as `🚩`).

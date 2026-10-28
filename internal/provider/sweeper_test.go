@@ -13,7 +13,7 @@
 //	webhook_subscription → business_hours → maintenance_schedule →
 //	maintenance_window →
 //	monitor_status_rule → alarm → variable → secret →
-//	probe → sensor → monitor → component → label
+//	probe → sensor → monitor → component → calendar_event → label
 package provider_test
 
 import (
@@ -646,6 +646,10 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 	// 12. Components.
 	n, err = sweepComponents(ctx, c)
 	logStep("component", n, err)
+
+	// 12a. Calendar events (link to labels; deleting one only removes the links).
+	n, err = sweepCalendarEvents(ctx, c)
+	logStep("calendar_event", n, err)
 
 	// 13. Labels (shallowest).
 	n, err = sweepLabels(ctx, c)
