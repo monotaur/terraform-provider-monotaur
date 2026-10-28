@@ -183,7 +183,7 @@ func TestAccMonotaurSensor_drift(t *testing.T) {
 // probe_id changes from probe1 to probe2.
 //
 // Steps:
-//  1. Create label → component → monitor → probe1 + probe2 → sensor attached
+//  1. Create label → component → two monitors → probe1 + probe2 → sensor attached
 //     to probe1. Assert probe_id == probe1.id.
 //  2. Reconfigure to use probe2. Assert that Terraform plans an Update
 //     (in-place) for the sensor, not a destroy-before-create. Assert
@@ -300,8 +300,14 @@ resource "monotaur_component" "test" {
   label_ids = [monotaur_label.test.id]
 }
 
+# A monitor has a single probe, so each probe gets its own monitor.
 resource "monotaur_monitor" "test" {
   name          = %q
+  component_ids = [monotaur_component.test.id]
+}
+
+resource "monotaur_monitor" "test2" {
+  name          = "${monotaur_monitor.test.name}-2"
   component_ids = [monotaur_component.test.id]
 }
 
@@ -310,7 +316,7 @@ resource "monotaur_probe" "probe1" {
 }
 
 resource "monotaur_probe" "probe2" {
-  monitor_id = monotaur_monitor.test.id
+  monitor_id = monotaur_monitor.test2.id
 }
 
 resource "monotaur_sensor" "test" {

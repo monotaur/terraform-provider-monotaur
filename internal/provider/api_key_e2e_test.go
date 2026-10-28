@@ -9,14 +9,12 @@ package provider_test
 // Covered acceptance criteria:
 //   - Full lifecycle: create → import (key_value ignored) → replace (RequiresReplace on name)
 //   - No-drift: repeated plan-only steps verify key_value preserved via UseStateForUnknown
-//   - Drift detection: out-of-band key deletion via relationship endpoint → RefreshState detects absence
+//   - Drift detection: out-of-band key revocation → RefreshState detects absence
 //   - Service accounts are created via raw HTTP API (no monotaur_service_account resource)
 //   - All resource names use acctest.Name() for collision-safe, sweepable identifiers
 //   - No assumptions about an empty backend (pre-existing resources are ignored)
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,16 +156,15 @@ func TestAccMonotaurApiKey_nodrift(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestAccMonotaurApiKey_drift: out-of-band deletion detection
+// TestAccMonotaurApiKey_drift: out-of-band revocation detection
 //
 // Steps:
 //  1. Create a service account (via raw API) + a monotaur_api_key. Capture the
 //     key ID in a closure.
-//  2. In PreConfig, delete the key via the raw service-account relationship
-//     endpoint (simulating an operator change outside Terraform). Then perform a
-//     RefreshState step and assert that Terraform detects a non-empty plan —
-//     the provider's Read must surface the missing resource and mark it for
-//     recreation.
+//  2. In PreConfig, revoke the key via the raw revoke endpoint (simulating an
+//     operator change outside Terraform). Then perform a RefreshState step and
+//     assert that Terraform detects a non-empty plan — the provider's Read must
+//     treat the revoked key as gone and mark it for recreation.
 // ---------------------------------------------------------------------------
 
 func TestAccMonotaurApiKey_drift(t *testing.T) {
@@ -209,15 +206,15 @@ func TestAccMonotaurApiKey_drift(t *testing.T) {
 					},
 				),
 			},
-			// Step 2: Delete the key out-of-band via the service account relationship
-			// endpoint, then refresh state and assert non-empty plan.
+			// Step 2: Revoke the key out-of-band, then refresh state and assert
+			// non-empty plan.
 			{
 				PreConfig: func() {
 					if capturedID == "" {
 						t.Fatalf("drift test: capturedID is empty — create step must have failed")
 					}
-					if err := apiKeyOutOfBandDelete(saID, capturedID); err != nil {
-						t.Fatalf("drift test: out-of-band DELETE failed: %v", err)
+					if err := apiKeyOutOfBandRevoke(capturedID); err != nil {
+						t.Fatalf("drift test: out-of-band revoke failed: %v", err)
 					}
 				},
 				RefreshState:       true,
@@ -249,56 +246,37 @@ resource "monotaur_api_key" "test" {
 }
 
 // ---------------------------------------------------------------------------
-// Out-of-band deletion helper
+// Out-of-band revocation helper
 // ---------------------------------------------------------------------------
 
-// apiKeyOutOfBandDelete deletes an API key via the service account relationship
-// endpoint, simulating an operator deletion outside Terraform. The provider
-// uses the same endpoint in its Delete method.
+// apiKeyOutOfBandRevoke revokes an API key, simulating an operator change
+// outside Terraform. The provider uses the same endpoint in its Delete method.
 //
-// Endpoint: DELETE /api/v1/admin.serviceAccounts/{saID}/relationships/apiKeys
-// Body: JSON:API to-many relationship document identifying the key to remove.
-func apiKeyOutOfBandDelete(saID, keyID string) error {
+// Endpoint: POST /api/v1/admin.apiKeys/{id}/revoke
+func apiKeyOutOfBandRevoke(keyID string) error {
 	endpoint := strings.TrimRight(os.Getenv("MONOTAUR_ENDPOINT"), "/")
 	apiKey := os.Getenv("MONOTAUR_API_KEY")
 	if endpoint == "" || apiKey == "" {
 		return fmt.Errorf("MONOTAUR_ENDPOINT and MONOTAUR_API_KEY must be set")
 	}
 
-	payload := map[string]interface{}{
-		"data": []map[string]interface{}{
-			{
-				"type": "admin.apiKeys",
-				"id":   keyID,
-			},
-		},
-	}
-	body, err := json.Marshal(payload)
+	url := fmt.Sprintf("%s/api/v1/admin.apiKeys/%s/revoke", endpoint, keyID)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
-		return fmt.Errorf("marshal delete body: %w", err)
+		return fmt.Errorf("create revoke request: %w", err)
 	}
-
-	const ct = "application/vnd.api+json; ext=openapi"
-	url := fmt.Sprintf("%s/api/v1/admin.serviceAccounts/%s/relationships/apiKeys", endpoint, saID)
-	req, err := http.NewRequest(http.MethodDelete, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create DELETE request: %w", err)
-	}
-	req.Header.Set("Content-Type", ct)
-	req.Header.Set("Accept", ct)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("execute DELETE: %w", err)
+		return fmt.Errorf("execute revoke: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE relationship/api-keys for SA %s key %s: HTTP %d: %s",
-			saID, keyID, resp.StatusCode, string(raw))
+		return fmt.Errorf("revoke API key %s: HTTP %d: %s", keyID, resp.StatusCode, string(raw))
 	}
 	return nil
 }

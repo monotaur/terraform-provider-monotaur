@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -48,6 +49,7 @@ type monitorStatusRuleResourceModel struct {
 	Predicate      types.String `tfsdk:"predicate"`
 	Status         types.String `tfsdk:"status"`
 	StatusMessage  types.String `tfsdk:"status_message"`
+	Priority       types.Int64  `tfsdk:"priority"`
 	CreateDateTime types.String `tfsdk:"create_date_time"`
 	UpdateDateTime types.String `tfsdk:"update_date_time"`
 	MonitorID      types.String `tfsdk:"monitor_id"`
@@ -88,6 +90,14 @@ func (r *monitorStatusRuleResource) Schema(_ context.Context, _ resource.SchemaR
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"priority": schema.Int64Attribute{
+				MarkdownDescription: "Orders rules that share a `status`: lower values are evaluated first, and rules with equal priority are evaluated in ID order. Rules are always evaluated from the most severe status down. Defaults to `0`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"create_date_time": schema.StringAttribute{
@@ -149,6 +159,7 @@ func (r *monitorStatusRuleResource) Create(ctx context.Context, req resource.Cre
 		sm := plan.StatusMessage.ValueString()
 		attrs.StatusMessage = &sm
 	}
+	attrs.Priority = int64ToInt32Ptr(plan.Priority)
 
 	rels, diags := buildCreateMonitorStatusRuleRelationships(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -261,6 +272,7 @@ func (r *monitorStatusRuleResource) Update(ctx context.Context, req resource.Upd
 		sm := plan.StatusMessage.ValueString()
 		attrs.StatusMessage = &sm
 	}
+	attrs.Priority = int64ToInt32Ptr(plan.Priority)
 
 	rels, diags := buildUpdateMonitorStatusRuleRelationships(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -326,7 +338,7 @@ func (r *monitorStatusRuleResource) Delete(ctx context.Context, req resource.Del
 	id := state.ID.ValueString()
 	tflog.Debug(ctx, "monotaur_monitor_status_rule: deleting monitor status rule", map[string]any{"id": id})
 
-	apiResp, err := r.client.Inner().DeleteMonitorStatusRule(ctx, id)
+	apiResp, err := r.client.Inner().DeleteMonitorStatusRule(ctx, id, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Deleting Monitor Status Rule", "Could not delete monitor status rule "+id+": "+err.Error())
 		return
@@ -421,6 +433,8 @@ func flattenMonitorStatusRule(_ context.Context, data api.DataInMonitorStatusRul
 		} else {
 			model.StatusMessage = types.StringNull()
 		}
+
+		model.Priority = int32PtrToInt64(attrs.Priority)
 
 		if attrs.CreateDateTime != nil {
 			model.CreateDateTime = types.StringValue(attrs.CreateDateTime.Format(time.RFC3339))

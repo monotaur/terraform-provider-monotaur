@@ -75,8 +75,73 @@ func (d *monitorDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				MarkdownDescription: "The RFC 3339 timestamp when the current status expires (system-managed, read-only).",
 				Computed:            true,
 			},
+			"enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether the monitor is running (`false` means paused).",
+				Computed:            true,
+			},
+			"heartbeat_interval": schema.StringAttribute{
+				MarkdownDescription: "For `Heartbeat` monitors, the expected time between heartbeats (`hh:mm:ss` or `d.hh:mm:ss`).",
+				Computed:            true,
+			},
+			"heartbeat_grace": schema.StringAttribute{
+				MarkdownDescription: "For `Heartbeat` monitors, extra tolerance added to `heartbeat_interval` before a missed heartbeat faults the monitor.",
+				Computed:            true,
+			},
+			"no_data_status": schema.StringAttribute{
+				MarkdownDescription: "The status the monitor moves to when its probe stops delivering samples; null uses the server default.",
+				Computed:            true,
+			},
+			"no_data_missed_intervals": schema.Int64Attribute{
+				MarkdownDescription: "How many scheduled probe runs may pass without a sample before `no_data_status` applies; null uses the server default.",
+				Computed:            true,
+			},
+			"no_data_deadline_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor goes to `no_data_status` unless a sample arrives first.",
+				Computed:            true,
+			},
+			"no_data_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor entered the no-data state.",
+				Computed:            true,
+			},
+			"fault_threshold": schema.Int64Attribute{
+				MarkdownDescription: "Consecutive `Fault` samples needed before the monitor becomes `Fault`.",
+				Computed:            true,
+			},
+			"recovery_threshold": schema.Int64Attribute{
+				MarkdownDescription: "Consecutive `Ok`/`Warning` samples needed before a faulted monitor recovers.",
+				Computed:            true,
+			},
+			"confirmation_delay": schema.StringAttribute{
+				MarkdownDescription: "How long a held-back transition must also have been reported before the monitor takes it.",
+				Computed:            true,
+			},
+			"pending_status": schema.StringAttribute{
+				MarkdownDescription: "The status recent samples report that the monitor has not taken yet.",
+				Computed:            true,
+			},
+			"pending_status_count": schema.Int64Attribute{
+				MarkdownDescription: "How many consecutive samples have reported `pending_status`.",
+				Computed:            true,
+			},
+			"pending_status_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the first sample of the pending run ended.",
+				Computed:            true,
+			},
+			"flapping_threshold": schema.Int64Attribute{
+				MarkdownDescription: "The flapping detection threshold; null when detection is off.",
+				Computed:            true,
+			},
+			"flapping_date_time": schema.StringAttribute{
+				MarkdownDescription: "The RFC 3339 timestamp when the monitor started flapping; null while it is not flapping.",
+				Computed:            true,
+			},
 			"component_ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of components associated with this monitor.",
+				Computed:            true,
+				ElementType:         types.StringType,
+			},
+			"label_ids": schema.ListAttribute{
+				MarkdownDescription: "IDs of labels attached to this monitor.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},

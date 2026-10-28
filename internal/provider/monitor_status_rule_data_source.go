@@ -58,6 +58,10 @@ func (d *monitorStatusRuleDataSource) Schema(_ context.Context, _ datasource.Sch
 				MarkdownDescription: "A message to accompany the status when the predicate matches.",
 				Computed:            true,
 			},
+			"priority": schema.Int64Attribute{
+				MarkdownDescription: "Orders rules that share a `status`: lower values are evaluated first.",
+				Computed:            true,
+			},
 			"create_date_time": schema.StringAttribute{
 				MarkdownDescription: "The RFC 3339 timestamp when the monitor status rule was created.",
 				Computed:            true,

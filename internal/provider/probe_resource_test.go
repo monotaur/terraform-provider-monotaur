@@ -289,6 +289,28 @@ func buildProbePlanWithSensorIDs(ctx context.Context, t *testing.T, monitorID st
 	}
 }
 
+// sensor_ids is read-only: the API rejects assigning a probe's sensors, so
+// neither builder may send them even when the model holds IDs.
+func TestBuildProbeRelationships_neverSendSensors(t *testing.T) {
+	ctx := context.Background()
+	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", []string{"s1", "s2"})
+
+	createRels, diags := provider.BuildCreateProbeRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if createRels.Sensors != nil {
+		t.Error("create: Sensors must not be sent")
+	}
+	updateRels, diags := provider.BuildUpdateProbeRelationshipsForTest(ctx, plan)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if updateRels.Sensors != nil {
+		t.Error("update: Sensors must not be sent")
+	}
+}
+
 func TestBuildCreateProbeRelationships_monitorIDSet(t *testing.T) {
 	ctx := context.Background()
 	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", nil)
@@ -299,88 +321,6 @@ func TestBuildCreateProbeRelationships_monitorIDSet(t *testing.T) {
 	}
 	if got := rels.Monitor.Data.Id; got != "mon-1" {
 		t.Errorf("Monitor.Data.Id: want %q, got %q", "mon-1", got)
-	}
-}
-
-func TestBuildCreateProbeRelationships_sensorIDsPopulated(t *testing.T) {
-	ctx := context.Background()
-	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", []string{"s1", "s2"})
-
-	rels, diags := provider.BuildCreateProbeRelationshipsForTest(ctx, plan)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
-	if rels.Sensors == nil {
-		t.Fatal("Sensors: expected non-nil, got nil")
-	}
-	if got := len(rels.Sensors.Data); got != 2 {
-		t.Errorf("Sensors.Data: want 2, got %d", got)
-	}
-	if got := rels.Sensors.Data[0].Id; got != "s1" {
-		t.Errorf("Sensors.Data[0].Id: want %q, got %q", "s1", got)
-	}
-	if got := rels.Sensors.Data[1].Id; got != "s2" {
-		t.Errorf("Sensors.Data[1].Id: want %q, got %q", "s2", got)
-	}
-}
-
-func TestBuildCreateProbeRelationships_nilSensorIDs(t *testing.T) {
-	ctx := context.Background()
-	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", nil)
-
-	rels, diags := provider.BuildCreateProbeRelationshipsForTest(ctx, plan)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
-	if rels.Sensors != nil {
-		t.Error("Sensors: expected nil, got non-nil")
-	}
-}
-
-func TestBuildCreateProbeRelationships_emptySensorIDs(t *testing.T) {
-	ctx := context.Background()
-	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", []string{})
-
-	rels, diags := provider.BuildCreateProbeRelationshipsForTest(ctx, plan)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
-	if rels.Sensors == nil {
-		t.Error("Sensors: expected non-nil (empty list), got nil")
-	} else if got := len(rels.Sensors.Data); got != 0 {
-		t.Errorf("Sensors.Data: want 0 items, got %d", got)
-	}
-}
-
-func TestBuildUpdateProbeRelationships_sensorIDsPopulated(t *testing.T) {
-	ctx := context.Background()
-	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", []string{"s1"})
-
-	rels, diags := provider.BuildUpdateProbeRelationshipsForTest(ctx, plan)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
-	if rels.Sensors == nil {
-		t.Fatal("Sensors: expected non-nil, got nil")
-	}
-	if got := len(rels.Sensors.Data); got != 1 {
-		t.Errorf("Sensors.Data: want 1, got %d", got)
-	}
-	if got := rels.Sensors.Data[0].Id; got != "s1" {
-		t.Errorf("Sensors.Data[0].Id: want %q, got %q", "s1", got)
-	}
-}
-
-func TestBuildUpdateProbeRelationships_nilSensorIDs(t *testing.T) {
-	ctx := context.Background()
-	plan := buildProbePlanWithSensorIDs(ctx, t, "mon-1", nil)
-
-	rels, diags := provider.BuildUpdateProbeRelationshipsForTest(ctx, plan)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
-	if rels.Sensors != nil {
-		t.Error("Sensors: expected nil, got non-nil")
 	}
 }
 

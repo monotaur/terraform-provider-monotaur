@@ -202,7 +202,7 @@ func testAccRoleAssignmentConfig(roleName, saID string) string {
 	return fmt.Sprintf(`
 resource "monotaur_role" "test" {
   name        = %q
-  permissions = ["read:monitors"]
+  permissions = ["monitors:read"]
 }
 
 resource "monotaur_role_assignment" "test" {
@@ -221,12 +221,12 @@ func testAccRoleAssignmentReplaceConfig(roleName, secondRoleName, saID2 string) 
 	return fmt.Sprintf(`
 resource "monotaur_role" "test" {
   name        = %q
-  permissions = ["read:monitors"]
+  permissions = ["monitors:read"]
 }
 
 resource "monotaur_role" "test2" {
   name        = %q
-  permissions = ["read:monitors"]
+  permissions = ["monitors:read"]
 }
 
 resource "monotaur_role_assignment" "test" {

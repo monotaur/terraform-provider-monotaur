@@ -73,8 +73,15 @@ jobs:
             --from-literal=connection-string='Host=pg-postgresql;Port=5432;Database=monotaur;Username=monotaur;Password=testpassword123'
           kubectl -n "$NAMESPACE" create secret generic monotaur-redis \
             --from-literal=connection-string='rd-redis-master:6379'
+          # The Worker's pre-shared API key must be a well-formed Monotaur key
+          # (mtr_<live|test>_<8 base32>_<40 base32>, lowercase). Without a
+          # valid key the Worker cannot serve probe grains, and creating a
+          # probe or deleting a monitor with one fails with HTTP 500.
+          random() { tr -dc 'a-z2-7' < /dev/urandom | head -c "$1"; }
+          worker_key="mtr_live_$(random 8)_$(random 40)"
+          echo "::add-mask::$worker_key"
           kubectl -n "$NAMESPACE" create secret generic monotaur-api-keys \
-            --from-literal=monotaur-worker=ci-dummy-worker-key
+            --from-literal=monotaur-worker="$worker_key"
 
       - name: Create GHCR pull secret
         env:

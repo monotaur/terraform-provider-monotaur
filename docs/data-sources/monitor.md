@@ -28,8 +28,24 @@ data "monotaur_monitor" "api_health" {
 ### Read-Only
 
 - `component_ids` (List of String) IDs of components associated with this monitor.
+- `confirmation_delay` (String) How long a held-back transition must also have been reported before the monitor takes it.
 - `create_date_time` (String) The RFC 3339 timestamp when the monitor was created.
+- `enabled` (Boolean) Whether the monitor is running (`false` means paused).
+- `fault_threshold` (Number) Consecutive `Fault` samples needed before the monitor becomes `Fault`.
+- `flapping_date_time` (String) The RFC 3339 timestamp when the monitor started flapping; null while it is not flapping.
+- `flapping_threshold` (Number) The flapping detection threshold; null when detection is off.
+- `heartbeat_grace` (String) For `Heartbeat` monitors, extra tolerance added to `heartbeat_interval` before a missed heartbeat faults the monitor.
+- `heartbeat_interval` (String) For `Heartbeat` monitors, the expected time between heartbeats (`hh:mm:ss` or `d.hh:mm:ss`).
+- `label_ids` (List of String) IDs of labels attached to this monitor.
 - `name` (String) The display name of the monitor.
+- `no_data_date_time` (String) The RFC 3339 timestamp when the monitor entered the no-data state.
+- `no_data_deadline_date_time` (String) The RFC 3339 timestamp when the monitor goes to `no_data_status` unless a sample arrives first.
+- `no_data_missed_intervals` (Number) How many scheduled probe runs may pass without a sample before `no_data_status` applies; null uses the server default.
+- `no_data_status` (String) The status the monitor moves to when its probe stops delivering samples; null uses the server default.
+- `pending_status` (String) The status recent samples report that the monitor has not taken yet.
+- `pending_status_count` (Number) How many consecutive samples have reported `pending_status`.
+- `pending_status_date_time` (String) The RFC 3339 timestamp when the first sample of the pending run ended.
+- `recovery_threshold` (Number) Consecutive `Ok`/`Warning` samples needed before a faulted monitor recovers.
 - `status` (String) The current status of the monitor (system-managed, read-only).
 - `status_expiration_date_time` (String) The RFC 3339 timestamp when the current status expires (system-managed, read-only).
 - `status_message` (String) A message describing the current status (system-managed, read-only).

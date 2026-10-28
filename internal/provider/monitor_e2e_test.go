@@ -320,3 +320,131 @@ func monitorOutOfBandPatch(id, newName string) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// TestAccMonotaurMonitor_settings: heartbeat, no-data, flap suppression,
+// pause and labels
+//
+// Steps:
+//  1. Create a Heartbeat monitor with every optional setting and a label.
+//  2. Import by ID and verify round-trip equality.
+//  3. Change the settings and pause the monitor.
+//  4. Remove the nullable settings from the configuration and assert the API
+//     cleared them (they are sent as explicit nulls), while the
+//     Optional+Computed thresholds keep their last value.
+// ---------------------------------------------------------------------------
+
+func TestAccMonotaurMonitor_settings(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+
+	monitorName := acctest.Name("monitor", "settings")
+	labelText := acctest.LabelText("monset")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: Create with all settings.
+			{
+				Config: testAccMonitorConfigSettings(monitorName, labelText, `
+  enabled                  = true
+  heartbeat_interval       = "00:05:00"
+  heartbeat_grace          = "00:00:30"
+  no_data_status           = "Fault"
+  no_data_missed_intervals = 5
+  fault_threshold          = 3
+  recovery_threshold       = 2
+  confirmation_delay       = "00:02:00"
+  flapping_threshold       = 6
+  label_ids                = [monotaur_label.test.id]
+`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "enabled", "true"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "heartbeat_interval", "00:05:00"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "heartbeat_grace", "00:00:30"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "no_data_status", "Fault"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "no_data_missed_intervals", "5"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "fault_threshold", "3"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "recovery_threshold", "2"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "confirmation_delay", "00:02:00"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "flapping_threshold", "6"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "label_ids.#", "1"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "pending_status_count", "0"),
+				),
+			},
+			// Step 2: Import. label_ids and component_ids are skipped for the
+			// same reason as in TestAccMonotaurMonitor_basic.
+			{
+				ResourceName:            "monotaur_monitor.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"component_ids", "label_ids"},
+			},
+			// Step 3: Change settings and pause. The interval is written in a
+			// non-canonical spelling to exercise TimeSpan normalisation.
+			{
+				Config: testAccMonitorConfigSettings(monitorName, labelText, `
+  enabled                  = false
+  heartbeat_interval       = "0:10:0"
+  heartbeat_grace          = "00:01:00"
+  no_data_status           = "Unknown"
+  no_data_missed_intervals = 0
+  fault_threshold          = 1
+  recovery_threshold       = 4
+  confirmation_delay       = "1.00:00:00"
+  flapping_threshold       = 2
+  label_ids                = []
+`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "enabled", "false"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "heartbeat_interval", "0:10:0"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "heartbeat_grace", "00:01:00"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "no_data_status", "Unknown"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "no_data_missed_intervals", "0"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "fault_threshold", "1"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "recovery_threshold", "4"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "confirmation_delay", "1.00:00:00"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "flapping_threshold", "2"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "label_ids.#", "0"),
+				),
+			},
+			// Step 4: Remove the nullable settings; the API must clear them.
+			{
+				Config: testAccMonitorConfigSettings(monitorName, labelText, ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "heartbeat_interval"),
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "heartbeat_grace"),
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "no_data_status"),
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "no_data_missed_intervals"),
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "confirmation_delay"),
+					resource.TestCheckNoResourceAttr("monotaur_monitor.test", "flapping_threshold"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "enabled", "false"),
+					resource.TestCheckResourceAttr("monotaur_monitor.test", "recovery_threshold", "4"),
+				),
+			},
+			// Step 5: Re-applying the same configuration is a no-op.
+			{
+				Config: testAccMonitorConfigSettings(monitorName, labelText, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+func testAccMonitorConfigSettings(monitorName, labelText, settings string) string {
+	return fmt.Sprintf(`
+resource "monotaur_label" "test" {
+  text = %q
+}
+
+resource "monotaur_monitor" "test" {
+  name = %q
+  type = "Heartbeat"
+%s
+}
+`, labelText, monitorName, settings)
+}

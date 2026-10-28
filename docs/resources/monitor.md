@@ -17,10 +17,33 @@ resource "monotaur_component" "api_server" {
   name = "API Server"
 }
 
+resource "monotaur_label" "team" {
+  text = "team::platform"
+}
+
+# A heartbeat monitor: the service reports in every 5 minutes, with 30 seconds
+# of grace before a missed heartbeat faults the monitor.
 resource "monotaur_monitor" "api_health" {
-  name         = "API Health Check"
-  type         = "Heartbeat"
-  component_ids = [monotaur_component.api_server.id]
+  name               = "API Health Check"
+  type               = "Heartbeat"
+  heartbeat_interval = "00:05:00"
+  heartbeat_grace    = "00:00:30"
+  component_ids      = [monotaur_component.api_server.id]
+  label_ids          = [monotaur_label.team.id]
+}
+
+# A probed monitor with flap suppression: three faulted samples spanning at
+# least two minutes open an alarm, and a probe that misses five runs faults it.
+resource "monotaur_monitor" "website" {
+  name                     = "Website"
+  type                     = "Alert"
+  fault_threshold          = 3
+  recovery_threshold       = 2
+  confirmation_delay       = "00:02:00"
+  flapping_threshold       = 6
+  no_data_status           = "Fault"
+  no_data_missed_intervals = 5
+  enabled                  = true
 }
 ```
 
@@ -34,12 +57,28 @@ resource "monotaur_monitor" "api_health" {
 ### Optional
 
 - `component_ids` (List of String) IDs of components associated with this monitor.
+- `confirmation_delay` (String) How long a transition held back by `fault_threshold`/`recovery_threshold` must also have been reported before the monitor takes it (`00:00:01` to `1.00:00:00`). Unset waits for the sample count only.
+- `enabled` (Boolean) Whether the monitor is running. A paused (`false`) monitor stops its probe, ignores heartbeats and samples, opens no alarms and sends no notifications, and the paused period is excluded from uptime. Defaults to `true`.
+- `fault_threshold` (Number) How many consecutive `Fault` samples are needed before the monitor becomes `Fault` and opens an alarm (1–100). Defaults to `1`.
+- `flapping_threshold` (Number) Turns flapping detection on: the monitor is flapping once its last 20 samples switch between `Fault` and `Ok`/`Warning` at least this many times (2–19). Unset turns detection off.
+- `heartbeat_grace` (String) For `Heartbeat` monitors, extra tolerance added to `heartbeat_interval` before a missed heartbeat faults the monitor (`hh:mm:ss` or `d.hh:mm:ss`).
+- `heartbeat_interval` (String) For `Heartbeat` monitors, the expected time between heartbeats, as a .NET TimeSpan (`hh:mm:ss` or `d.hh:mm:ss`, e.g. `00:05:00`).
+- `label_ids` (List of String) IDs of labels attached to this monitor.
+- `no_data_missed_intervals` (Number) For a monitor with a sampling probe, how many consecutive scheduled probe runs may pass without a sample before the monitor moves to `no_data_status` (0–1000; `0` turns the check off). Unset uses the server default (3 unless configured).
+- `no_data_status` (String) For a monitor with a sampling probe, the status the monitor moves to when its probe stops delivering samples (`Unknown`, `Warning` or `Fault`; `Ok` is rejected). Unset uses the server default (`Unknown` unless configured).
+- `recovery_threshold` (Number) How many consecutive `Ok`/`Warning` samples are needed before a faulted monitor recovers and closes its alarm (1–100). Defaults to `1`.
 - `type` (String) The monitor type (e.g. `Alert`, `Heartbeat`).
 
 ### Read-Only
 
 - `create_date_time` (String) The RFC 3339 timestamp when the monitor was created (assigned by the API).
+- `flapping_date_time` (String) The RFC 3339 timestamp when the monitor started flapping; null while it is not flapping (system-managed, read-only).
 - `id` (String) The unique identifier of the monitor (assigned by the API).
+- `no_data_date_time` (String) The RFC 3339 timestamp when the monitor entered the no-data state; null while samples are arriving (system-managed, read-only).
+- `no_data_deadline_date_time` (String) The RFC 3339 timestamp when the monitor goes to `no_data_status` unless a sample arrives first (system-managed, read-only).
+- `pending_status` (String) The status recent samples report that the monitor has not taken yet because a threshold is not reached (system-managed, read-only).
+- `pending_status_count` (Number) How many consecutive samples have reported `pending_status` (system-managed, read-only).
+- `pending_status_date_time` (String) The RFC 3339 timestamp when the first sample of the pending run ended (system-managed, read-only).
 - `status` (String) The current status of the monitor (system-managed, read-only).
 - `status_expiration_date_time` (String) The RFC 3339 timestamp when the current status expires (system-managed, read-only).
 - `status_message` (String) A message describing the current status (system-managed, read-only).

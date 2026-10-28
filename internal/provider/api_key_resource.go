@@ -303,6 +303,15 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
+	// A key revoked out-of-band can no longer authenticate: treat it like a
+	// deleted key and remove it from state so the next plan re-creates it. A
+	// revocation in the future is a rotation grace period; the key still works.
+	if data.Attributes != nil && data.Attributes.RevokedAt != nil && !data.Attributes.RevokedAt.After(time.Now()) {
+		tflog.Debug(ctx, "monotaur_api_key: API key revoked, removing from state", map[string]any{"id": id})
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
 	// Pass the existing state so flattenApiKey preserves the write-once key_value
 	// field when the API omits it from the GET response.
 	resp.Diagnostics.Append(flattenApiKey(ctx, data, &state)...)
@@ -324,9 +333,9 @@ func (r *apiKeyResource) Update(ctx context.Context, req resource.UpdateRequest,
 	)
 }
 
-// Delete removes an API key by removing it from the owning service account's
-// relationship. The API does not expose a direct DELETE /admin.apiKeys/{id}
-// endpoint; instead, keys are deleted via the service account relationship endpoint.
+// Delete revokes an API key via POST /admin.apiKeys/{id}/revoke. The API has
+// no DELETE for keys: a revoked key stays readable (with revoked_at set) but
+// can no longer authenticate.
 func (r *apiKeyResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state apiKeyResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -335,38 +344,28 @@ func (r *apiKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	id := state.ID.ValueString()
-	serviceAccountID := state.ServiceAccountID.ValueString()
-	tflog.Debug(ctx, "monotaur_api_key: deleting API key", map[string]any{
-		"id":                 id,
-		"service_account_id": serviceAccountID,
-	})
+	tflog.Debug(ctx, "monotaur_api_key: revoking API key", map[string]any{"id": id})
 
-	body := api.ToManyAdminApiKeyInRequest{
-		Data: []api.AdminApiKeyIdentifierInRequest{
-			{
-				Id:   id,
-				Type: api.ResourceTypeAdminApiKeys,
-			},
-		},
-	}
-
-	apiResp, err := r.client.Inner().DeleteAdminServiceAccountApiKeysRelationshipWithApplicationVndAPIPlusJSONExtOpenapiBody(
-		ctx,
-		serviceAccountID,
-		body,
-	)
+	apiResp, err := r.client.RevokeAdminApiKey(ctx, id)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Deleting API Key", "Could not delete API key "+id+": "+err.Error())
+		resp.Diagnostics.AddError("Error Deleting API Key", "Could not revoke API key "+id+": "+err.Error())
 		return
 	}
 	defer apiResp.Body.Close()
 
 	if err := client.CheckResponse(apiResp); err != nil {
+		// 404 means the key no longer exists (e.g. its service account was
+		// deleted). Treat as a no-op so destroy stays idempotent.
+		var apiErr *client.APIError
+		if apiResp.StatusCode == http.StatusNotFound || (errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound) {
+			tflog.Debug(ctx, "monotaur_api_key: API key already gone, ignoring 404", map[string]any{"id": id})
+			return
+		}
 		resp.Diagnostics.AddError("Error Deleting API Key", "API returned an error: "+err.Error())
 		return
 	}
 
-	tflog.Debug(ctx, "monotaur_api_key: deleted API key", map[string]any{"id": id})
+	tflog.Debug(ctx, "monotaur_api_key: revoked API key", map[string]any{"id": id})
 }
 
 // ImportState supports `terraform import monotaur_api_key.example <id>`.
