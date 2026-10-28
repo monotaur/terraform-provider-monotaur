@@ -89,7 +89,7 @@ func (r *probeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"time_zone_id": schema.StringAttribute{
-				MarkdownDescription: "The time zone `schedule` is evaluated in, as an IANA ID such as `Europe/Berlin`. Unset means UTC. Use an IANA ID: the API converts Windows IDs, which would show as a change on the next plan.",
+				MarkdownDescription: "The time zone `schedule` is evaluated in, as an IANA ID such as `Europe/Berlin` (Windows IDs are also accepted). Unset means UTC.",
 				Optional:            true,
 			},
 			"create_date_time": schema.StringAttribute{

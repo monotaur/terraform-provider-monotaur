@@ -10,6 +10,8 @@
 //
 //	api_key → role_assignment → role → service_account →
 //	notification_escalation_step → notification_policy → notification_channel →
+//	webhook_subscription → business_hours → maintenance_schedule →
+//	maintenance_window →
 //	monitor_status_rule → alarm → variable → secret →
 //	probe → sensor → monitor → component → label
 package provider_test
@@ -582,6 +584,21 @@ func runAllSweepers(ctx context.Context) (int, []error) {
 	// 4b. Notification channels.
 	n, err = sweepNotificationChannels(ctx, c)
 	logStep("notification_channel", n, err)
+
+	// 4c. Webhook subscriptions and business hours (no dependants; deleting
+	//     business hours detaches them from their components).
+	n, err = sweepWebhookSubscriptions(ctx, c)
+	logStep("webhook_subscription", n, err)
+	n, err = sweepBusinessHours(ctx, c)
+	logStep("business_hours", n, err)
+
+	// 4d. Maintenance schedules, then windows: deleting a schedule removes its
+	//     upcoming generated window, and past generated windows keep the
+	//     schedule's tfe2e- description.
+	n, err = sweepMaintenanceSchedules(ctx, c)
+	logStep("maintenance_schedule", n, err)
+	n, err = sweepMaintenanceWindows(ctx, c)
+	logStep("maintenance_window", n, err)
 
 	// 5. Collect tfe2e- monitor IDs for child-resource sweepers.
 	var monDoc collectionDoc

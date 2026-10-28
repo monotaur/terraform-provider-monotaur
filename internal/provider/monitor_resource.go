@@ -391,7 +391,13 @@ func (r *monitorResource) Update(ctx context.Context, req resource.UpdateRequest
 	attrs.ConfirmationDelay = settings.ConfirmationDelay
 	attrs.FlappingThreshold = settings.FlappingThreshold
 
-	rels, diags := buildUpdateMonitorRelationships(ctx, plan)
+	var config monitorResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	rels, diags := buildUpdateMonitorRelationships(ctx, configuredMonitorRelationships(plan, config))
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -596,6 +602,21 @@ func buildCreateMonitorRelationships(ctx context.Context, plan monitorResourceMo
 	return rels, diags
 }
 
+// configuredMonitorRelationships returns plan with the to-many relationship
+// lists the configuration leaves out set to null, so the update request omits
+// them. An unconfigured Optional+Computed list plans as its prior state, and
+// sending it would replace links made elsewhere, such as
+// monotaur_component.monitor_ids or monotaur_label.monitor_ids.
+func configuredMonitorRelationships(plan, config monitorResourceModel) monitorResourceModel {
+	if config.ComponentIDs.IsNull() {
+		plan.ComponentIDs = types.ListNull(types.StringType)
+	}
+	if config.LabelIDs.IsNull() {
+		plan.LabelIDs = types.ListNull(types.StringType)
+	}
+	return plan
+}
+
 // buildUpdateMonitorRelationships converts the plan's relationship ID fields
 // into the API request type for update operations.
 func buildUpdateMonitorRelationships(ctx context.Context, plan monitorResourceModel) (*api.RelationshipsInUpdateMonitorRequest, diag.Diagnostics) {
@@ -776,6 +797,11 @@ func FlattenMonitorForTest(ctx context.Context, data api.DataInMonitorResponse, 
 // ExpandMonitorSettingsForTest exposes expandMonitorSettings for use in unit tests.
 func ExpandMonitorSettingsForTest(plan monitorResourceModel) monitorSettings {
 	return expandMonitorSettings(plan)
+}
+
+// ConfiguredMonitorRelationshipsForTest exposes configuredMonitorRelationships for use in unit tests.
+func ConfiguredMonitorRelationshipsForTest(plan, config monitorResourceModel) monitorResourceModel {
+	return configuredMonitorRelationships(plan, config)
 }
 
 // BuildCreateMonitorRelationshipsForTest exposes buildCreateMonitorRelationships for use in unit tests.
