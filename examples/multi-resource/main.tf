@@ -85,9 +85,9 @@ resource "monotaur_probe" "http" {
 resource "monotaur_sensor" "http_check" {
   probe_id    = monotaur_probe.http.id
   name        = "HTTP GET /health"
-  plugin_name = "http"
-  type        = "HttpCheck"
-  parameters  = jsonencode({ url = "https://api.example.com/health" })
+  plugin_name = "NetSensors"
+  type        = "HttpSensor"
+  parameters  = jsonencode({ Url = "https://api.example.com/health" })
 }
 
 # ---------------------------------------------------------------------------

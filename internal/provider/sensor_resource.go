@@ -1,9 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -83,7 +86,7 @@ func (r *sensorResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Required:            true,
 			},
 			"parameters": schema.StringAttribute{
-				MarkdownDescription: "JSON-encoded parameters for the sensor plugin.",
+				MarkdownDescription: "JSON-encoded parameters for the sensor plugin, validated by the server against the sensor type's parameters schema (see `GET /api/v1/plugins`). Use `jsonencode()`, e.g. `jsonencode({ Url = \"https://example.com/health\" })` for a `NetSensors` `HttpSensor`. Keys are case-sensitive. Formatting and key order are preserved when the server's value is semantically equal.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -143,7 +146,12 @@ func (r *sensorResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	if !plan.Parameters.IsNull() && !plan.Parameters.IsUnknown() {
-		attrs.Parameters = plan.Parameters.ValueString()
+		params, d := expandSensorParameters(plan.Parameters.ValueString())
+		resp.Diagnostics.Append(d...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		attrs.Parameters = params
 	}
 
 	rels, diags := buildCreateSensorRelationships(ctx, plan)
@@ -259,7 +267,12 @@ func (r *sensorResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 
 	if !plan.Parameters.IsNull() && !plan.Parameters.IsUnknown() {
-		attrs.Parameters = plan.Parameters.ValueString()
+		params, d := expandSensorParameters(plan.Parameters.ValueString())
+		resp.Diagnostics.Append(d...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		attrs.Parameters = params
 	}
 
 	rels, diags := buildUpdateSensorRelationships(ctx, plan)
@@ -422,17 +435,9 @@ func flattenSensor(_ context.Context, data api.DataInSensorResponse, model *sens
 			model.Type = types.StringNull()
 		}
 
-		if attrs.Parameters != nil {
-			// Parameters is interface{} — marshal to JSON string for storage in state.
-			switch v := attrs.Parameters.(type) {
-			case string:
-				model.Parameters = types.StringValue(v)
-			default:
-				model.Parameters = types.StringNull()
-			}
-		} else {
-			model.Parameters = types.StringNull()
-		}
+		params, d := flattenSensorParameters(attrs.Parameters, model.Parameters)
+		diags.Append(d...)
+		model.Parameters = params
 
 		if attrs.CreateDateTime != nil {
 			model.CreateDateTime = types.StringValue(attrs.CreateDateTime.Format(time.RFC3339))
@@ -461,6 +466,71 @@ func flattenSensor(_ context.Context, data api.DataInSensorResponse, model *sens
 }
 
 // ---------------------------------------------------------------------------
+// Parameters helpers
+// ---------------------------------------------------------------------------
+
+// expandSensorParameters decodes the JSON-encoded `parameters` attribute into
+// a value the API client serialises as real JSON. Assigning the raw string to
+// the interface{} field would send a JSON *string* ("{\"Url\":...}") instead
+// of an object, which the API validates against the plugin's string form and
+// rejects.
+func expandSensorParameters(raw string) (interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	var v interface{}
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		diags.AddAttributeError(
+			path.Root("parameters"),
+			"Invalid Sensor Parameters",
+			"parameters must be valid JSON (use jsonencode()); a plain URL is written as jsonencode(\"https://...\"). Error: "+err.Error(),
+		)
+		return nil, diags
+	}
+
+	return v, diags
+}
+
+// flattenSensorParameters converts the API's decoded `parameters` value back
+// into the JSON string stored in state. When the prior value is semantically
+// equal JSON (same data, different key order or whitespace) it is kept as-is
+// so Terraform does not report a diff or an inconsistent result after apply.
+func flattenSensorParameters(apiValue interface{}, prior types.String) (types.String, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if apiValue == nil {
+		return types.StringNull(), diags
+	}
+
+	encoded, err := json.Marshal(apiValue)
+	if err != nil {
+		diags.AddError("Error Encoding Sensor Parameters", err.Error())
+		return types.StringNull(), diags
+	}
+
+	if !prior.IsNull() && !prior.IsUnknown() && jsonSemanticallyEqual(prior.ValueString(), encoded) {
+		return prior, diags
+	}
+
+	return types.StringValue(string(encoded)), diags
+}
+
+// jsonSemanticallyEqual reports whether a and b decode to equal JSON values.
+func jsonSemanticallyEqual(a string, b []byte) bool {
+	var av, bv interface{}
+	dec := json.NewDecoder(bytes.NewReader([]byte(a)))
+	dec.UseNumber()
+	if err := dec.Decode(&av); err != nil {
+		return false
+	}
+	dec = json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&bv); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
+}
+
+// ---------------------------------------------------------------------------
 // Test exports
 // ---------------------------------------------------------------------------
 
@@ -482,4 +552,9 @@ func BuildCreateSensorRelationshipsForTest(ctx context.Context, plan sensorResou
 // BuildUpdateSensorRelationshipsForTest exposes buildUpdateSensorRelationships for use in unit tests.
 func BuildUpdateSensorRelationshipsForTest(ctx context.Context, plan sensorResourceModel) (*api.RelationshipsInUpdateSensorRequest, diag.Diagnostics) {
 	return buildUpdateSensorRelationships(ctx, plan)
+}
+
+// ExpandSensorParametersForTest exposes expandSensorParameters for use in unit tests.
+func ExpandSensorParametersForTest(raw string) (interface{}, diag.Diagnostics) {
+	return expandSensorParameters(raw)
 }
