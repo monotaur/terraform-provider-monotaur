@@ -142,18 +142,96 @@ func TestFlattenSensor_nullsTypeWhenAbsent(t *testing.T) {
 	}
 }
 
-func TestFlattenSensor_setsParametersStringWhenPresent(t *testing.T) {
+func TestFlattenSensor_encodesObjectParametersAsJSON(t *testing.T) {
 	ctx := context.Background()
 	fixture := sensorFlattenFixture()
-	fixture.Attributes.Parameters = `{"url":"https://example.com"}`
+	// The API client decodes parameters into map[string]interface{}.
+	fixture.Attributes.Parameters = map[string]interface{}{"Url": "https://example.com"}
 
 	var model provider.SensorResourceModelForTest
 	diags := provider.FlattenSensorForTest(ctx, fixture, &model)
 	if diags.HasError() {
 		t.Fatalf("FlattenSensorForTest returned errors: %v", diags)
 	}
-	if got := model.Parameters.ValueString(); got != `{"url":"https://example.com"}` {
-		t.Errorf("Parameters: want %q, got %q", `{"url":"https://example.com"}`, got)
+	if got := model.Parameters.ValueString(); got != `{"Url":"https://example.com"}` {
+		t.Errorf("Parameters: want %q, got %q", `{"Url":"https://example.com"}`, got)
+	}
+}
+
+func TestFlattenSensor_encodesStringParametersAsJSON(t *testing.T) {
+	ctx := context.Background()
+	fixture := sensorFlattenFixture()
+	fixture.Attributes.Parameters = "https://example.com"
+
+	var model provider.SensorResourceModelForTest
+	diags := provider.FlattenSensorForTest(ctx, fixture, &model)
+	if diags.HasError() {
+		t.Fatalf("FlattenSensorForTest returned errors: %v", diags)
+	}
+	if got := model.Parameters.ValueString(); got != `"https://example.com"` {
+		t.Errorf("Parameters: want %q, got %q", `"https://example.com"`, got)
+	}
+}
+
+func TestFlattenSensor_keepsSemanticallyEqualPriorParameters(t *testing.T) {
+	ctx := context.Background()
+	fixture := sensorFlattenFixture()
+	fixture.Attributes.Parameters = map[string]interface{}{"Url": "https://example.com", "Timeout": float64(5000)}
+
+	prior := "{\n  \"Timeout\": 5000,\n  \"Url\": \"https://example.com\"\n}"
+	model := provider.SensorResourceModelForTest{Parameters: types.StringValue(prior)}
+	diags := provider.FlattenSensorForTest(ctx, fixture, &model)
+	if diags.HasError() {
+		t.Fatalf("FlattenSensorForTest returned errors: %v", diags)
+	}
+	if got := model.Parameters.ValueString(); got != prior {
+		t.Errorf("Parameters: want prior value %q preserved, got %q", prior, got)
+	}
+}
+
+func TestFlattenSensor_replacesDifferingPriorParameters(t *testing.T) {
+	ctx := context.Background()
+	fixture := sensorFlattenFixture()
+	fixture.Attributes.Parameters = map[string]interface{}{"Url": "https://new.example.com"}
+
+	model := provider.SensorResourceModelForTest{Parameters: types.StringValue(`{"Url":"https://old.example.com"}`)}
+	diags := provider.FlattenSensorForTest(ctx, fixture, &model)
+	if diags.HasError() {
+		t.Fatalf("FlattenSensorForTest returned errors: %v", diags)
+	}
+	if got := model.Parameters.ValueString(); got != `{"Url":"https://new.example.com"}` {
+		t.Errorf("Parameters: want %q, got %q", `{"Url":"https://new.example.com"}`, got)
+	}
+}
+
+func TestExpandSensorParameters_decodesObject(t *testing.T) {
+	v, diags := provider.ExpandSensorParametersForTest(`{"Url":"https://example.com"}`)
+	if diags.HasError() {
+		t.Fatalf("ExpandSensorParametersForTest returned errors: %v", diags)
+	}
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		t.Fatalf("want map[string]interface{}, got %T (a string here would be sent as a JSON string)", v)
+	}
+	if m["Url"] != "https://example.com" {
+		t.Errorf("Url: want %q, got %v", "https://example.com", m["Url"])
+	}
+}
+
+func TestExpandSensorParameters_decodesStringForm(t *testing.T) {
+	v, diags := provider.ExpandSensorParametersForTest(`"https://example.com"`)
+	if diags.HasError() {
+		t.Fatalf("ExpandSensorParametersForTest returned errors: %v", diags)
+	}
+	if v != "https://example.com" {
+		t.Errorf("want %q, got %v", "https://example.com", v)
+	}
+}
+
+func TestExpandSensorParameters_rejectsInvalidJSON(t *testing.T) {
+	_, diags := provider.ExpandSensorParametersForTest(`https://example.com`)
+	if !diags.HasError() {
+		t.Fatal("expected an error for non-JSON parameters")
 	}
 }
 

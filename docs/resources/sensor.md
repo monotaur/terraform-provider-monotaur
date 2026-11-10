@@ -27,9 +27,9 @@ resource "monotaur_probe" "http" {
 resource "monotaur_sensor" "http_check" {
   probe_id    = monotaur_probe.http.id
   name        = "HTTP Check"
-  plugin_name = "http"
-  type        = "HttpCheck"
-  parameters  = jsonencode({ url = "https://api.example.com/health" })
+  plugin_name = "NetSensors"
+  type        = "HttpSensor"
+  parameters  = jsonencode({ Url = "https://api.example.com/health" })
 }
 ```
 
@@ -45,7 +45,7 @@ resource "monotaur_sensor" "http_check" {
 
 ### Optional
 
-- `parameters` (String) JSON-encoded parameters for the sensor plugin.
+- `parameters` (String) JSON-encoded parameters for the sensor plugin, validated by the server against the sensor type's parameters schema (see `GET /api/v1/plugins`). Use `jsonencode()`, e.g. `jsonencode({ Url = "https://example.com/health" })` for a `NetSensors` `HttpSensor`. Keys are case-sensitive. Formatting and key order are preserved when the server's value is semantically equal.
 
 ### Read-Only
 

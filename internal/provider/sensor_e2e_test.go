@@ -10,6 +10,8 @@ package provider_test
 //   - Full lifecycle: create → import → update (all settable attributes) → delete
 //   - Drift detection: out-of-band PATCH via raw HTTP, plan detects non-empty diff
 //   - Changing probe_id triggers an in-place update (no RequiresReplace on probe_id)
+//   - Object-valued parameters are sent as a JSON object (not a JSON string),
+//     round-trip through import, and keep the user's formatting in state
 //   - All resource names use acctest.Name() for collision-safe, sweepable identifiers
 //   - No assumptions about an empty backend (pre-existing resources are ignored)
 
@@ -91,6 +93,67 @@ func TestAccMonotaurSensor_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("monotaur_sensor.test", "plugin_name", "tcp"),
 					resource.TestCheckResourceAttr("monotaur_sensor.test", "type", "TcpSensor"),
 					resource.TestCheckResourceAttr("monotaur_sensor.test", "parameters", "{}"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestAccMonotaurSensor_objectParameters: real plugin parameters
+//
+// Regression test for parameters being sent as a JSON-encoded *string*: the
+// API validates HttpSensor parameters against its schema (a URL string, or an
+// object with a required Url), so a stringified object is rejected with 422.
+//
+// Steps:
+//  1. Create a NetSensors/HttpSensor sensor with an object parameter. Assert
+//     the exact configured string lands in state.
+//  2. Import by ID. Assert round-trip equality (ImportStateVerify).
+//  3. Update to a multi-key object written with non-canonical key order and
+//     whitespace. Assert state keeps the configured text verbatim; the
+//     framework's post-apply empty-plan check catches any spurious diff.
+// ---------------------------------------------------------------------------
+
+func TestAccMonotaurSensor_objectParameters(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("Set TF_ACC=1 to run acceptance tests")
+	}
+
+	labelName := acctest.LabelText("sensor-params")
+	componentName := acctest.Name("component", "sensor-params")
+	monitorName := acctest.Name("monitor", "sensor-params")
+	sensorName := acctest.Name("sensor", "params")
+
+	createParams := `{"Url":"https://example.com/health"}`
+	updateParams := `{ "Url": "https://example.com/status", "Method": "GET", "Timeout": 5000 }`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccSensorConfig(
+					labelName, componentName, monitorName,
+					sensorName, "NetSensors", "HttpSensor", createParams,
+				),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet("monotaur_sensor.test", "id"),
+					resource.TestCheckResourceAttr("monotaur_sensor.test", "parameters", createParams),
+				),
+			},
+			{
+				ResourceName:      "monotaur_sensor.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: testAccSensorConfig(
+					labelName, componentName, monitorName,
+					sensorName, "NetSensors", "HttpSensor", updateParams,
+				),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("monotaur_sensor.test", "parameters", updateParams),
 				),
 			},
 		},
